@@ -1,0 +1,37 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    system: inferacordon
+
+# ── Scrape Configs ─────────────────────────────────────────────────────────
+scrape_configs:
+
+  # InferaCordon Gateway — custom ic_ metrics
+  - job_name: ic_gateway
+    static_configs:
+      - targets: ["gateway:8000"]
+    metrics_path: /metrics
+
+  # vLLM native Prometheus metrics (consumed directly per CLAUDE.md Section 18)
+  - job_name: ic_vllm
+    static_configs:
+      - targets: ["vllm:8080"]
+    metrics_path: /metrics
+
+  # Guardrail service metrics
+  - job_name: ic_guardrail
+    static_configs:
+      - targets: ["guardrail:8001"]
+    metrics_path: /metrics
+
+  # Verifier service metrics
+  - job_name: ic_verifier
+    static_configs:
+      - targets: ["verifier:8002"]
+    metrics_path: /metrics
+
+  # Prometheus self-scrape
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

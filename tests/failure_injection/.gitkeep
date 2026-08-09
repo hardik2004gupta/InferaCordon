@@ -1,0 +1,12 @@
+# Failure injection tests — per CLAUDE.md Section 17 (Ten Failure Modes)
+# Each failure mode must have a corresponding test:
+#   test_fm1_budget_ceiling.py     — BudgetLogitProcessor ceiling enforcement
+#   test_fm2_underthinking.py      — token length without natural </think>
+#   test_fm3_budget_blindness.py   — accumulated cost visibility
+#   test_fm4_cache_stale.py        — stale semantic cache hit
+#   test_fm5_queue_overflow.py     — admission control 503
+#   test_fm6_gpu_pressure.py       — GPU circuit breaker opens
+#   test_fm7_latency_slo.py        — latency circuit breaker opens
+#   test_fm8_guardrail_timeout.py  — 200ms guardrail timeout behavior
+#   test_fm9_policy_mismatch.py    — unknown tenant/domain
+#   test_fm10_verifier_fail.py     — escalation on failed verification

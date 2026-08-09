@@ -1,0 +1,77 @@
+# InferaCordon Policy: demo_tenant / general_qa
+# Demo policy with relaxed limits for live demonstrations.
+# Schema defined in CLAUDE.md Section 11.
+
+policy_id: demo_standard_v1
+tenant: demo_tenant
+domain: general_qa
+schema_version: 1
+
+budget_profiles:
+  low:
+    model: qwen25-3b
+    max_reasoning_tokens: 0
+    max_output_tokens: 256
+    verification: none
+    context_template: direct
+  medium:
+    model: deepseek-r1-7b
+    max_reasoning_tokens: 512
+    max_output_tokens: 512
+    verification: verifiable_only
+    context_template: step_by_step
+  high:
+    model: deepseek-r1-7b
+    max_reasoning_tokens: 1024
+    max_output_tokens: 1024
+    verification: required
+    context_template: verify_steps
+  critical:
+    model: deepseek-r1-7b
+    max_reasoning_tokens: 2048
+    max_output_tokens: 1024
+    verification: required
+    context_template: verify_steps
+
+complexity_thresholds:
+  low_max: 3.5
+  medium_max: 6.5
+  high_max: 8.5
+
+guardrails:
+  pii_redaction: none
+  injection_check: conditional
+  safety_check: conditional
+  output_safety: async
+
+limits:
+  requests_per_minute: 120
+  tokens_per_hour: 1000000
+  max_cost_per_request_usd: 0.10
+  max_prompt_tokens: 4096
+
+slo:
+  p95_latency_ms: 6000
+  quality_floor_score: 3.0
+  quality_regression_pp: 2.0
+
+cache:
+  enabled: true
+  similarity_threshold: 0.92
+  ttl_seconds: 3600
+
+escalation:
+  enabled: true
+  max_retries: 1
+  on_exhaustion: return_low_confidence
+
+versions:
+  policy: 1
+  system_prompt: prompt_v2
+  complexity_scorer: scorer_v1
+  guardrail_model: llamaguard_onnx_v1
+  injection_model: deberta_inject_v1
+  verifier: verifier_v1
+
+trace_retention_days: 7
+store_reasoning_trace: false

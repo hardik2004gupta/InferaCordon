@@ -1,0 +1,3 @@
+# Unit tests — per-component, no external services required
+# Week 1+ deliverables: test_complexity_scorer.py, test_budget_controller.py,
+#   test_policy_validator.py, test_logit_processor.py, test_audit_log.py

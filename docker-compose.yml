@@ -1,0 +1,202 @@
+# InferaCordon — 7-container topology per CLAUDE.md Section 4
+# CONFLICT 2 resolution: Jaeger is the 7th container (documented in CLAUDE.md Section 31)
+# Start with: docker compose up
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+
+  # ── 1. API Gateway ─────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: ic-gateway
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - SERVICE_NAME=gateway
+      - VLLM_BASE_URL=http://vllm:8080
+      - GUARDRAIL_BASE_URL=http://guardrail:8001
+      - VERIFIER_BASE_URL=http://verifier:8002
+      - JAEGER_OTLP_ENDPOINT=http://jaeger:4317
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-gateway
+    volumes:
+      - ./frontend/dist:/app/static:ro
+      - ./policy_engine/policies:/app/policies:ro
+    depends_on:
+      vllm:
+        condition: service_healthy
+      guardrail:
+        condition: service_healthy
+      verifier:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+      prometheus:
+        condition: service_started
+    networks:
+      - ic-net
+    logging: *default-logging
+    restart: unless-stopped
+
+  # ── 2. vLLM Model Server ───────────────────────────────────────────────────
+  vllm:
+    build:
+      context: ./vllm_adapter
+      dockerfile: Dockerfile
+    container_name: ic-vllm
+    # Port 8080 exposed only within ic-net (not published to host by default)
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - SERVICE_NAME=vllm
+      - VLLM_PORT=8080
+    volumes:
+      - vllm-model-cache:/root/.cache/huggingface
+      - ./vllm_adapter/serving_config.py:/app/serving_config.py:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - ic-net
+    logging: *default-logging
+    restart: unless-stopped
+
+  # ── 3. Guardrail Service ───────────────────────────────────────────────────
+  guardrail:
+    build:
+      context: ./guardrail_service
+      dockerfile: Dockerfile
+    container_name: ic-guardrail
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - SERVICE_NAME=guardrail
+      - PORT=8001
+      - JAEGER_OTLP_ENDPOINT=http://jaeger:4317
+    volumes:
+      - ./guardrail_service/models:/app/models:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ic-net
+    logging: *default-logging
+    restart: unless-stopped
+
+  # ── 4. Verifier Service ────────────────────────────────────────────────────
+  verifier:
+    build:
+      context: ./verifier_service
+      dockerfile: Dockerfile
+    container_name: ic-verifier
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    environment:
+      - SERVICE_NAME=verifier
+      - PORT=8002
+      - JAEGER_OTLP_ENDPOINT=http://jaeger:4317
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - ic-net
+    logging: *default-logging
+    restart: unless-stopped
+
+  # ── 5. Prometheus ──────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: ic-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    networks:
+      - ic-net
+    logging: *default-logging
+    restart: unless-stopped
+
+  # ── 6. Grafana ─────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: ic-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-inferacordon}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./dashboards/grafana:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - ic-net
+    logging: *default-logging
+    restart: unless-stopped
+
+  # ── 7. Jaeger (Distributed Tracing) ───────────────────────────────────────
+  # CONFLICT 2 resolution: Jaeger is the explicit 7th container.
+  # Architecture Plan Part IX lists 6 containers; the W3C traceparent +
+  # OpenTelemetry requirements in Section 18 mandated Jaeger — documented
+  # in CLAUDE.md Section 31 as the authoritative resolution.
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    container_name: ic-jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+    networks:
+      - ic-net
+    logging: *default-logging
+    restart: unless-stopped
+
+networks:
+  ic-net:
+    driver: bridge
+
+volumes:
+  vllm-model-cache:
+  prometheus-data:
+  grafana-data:

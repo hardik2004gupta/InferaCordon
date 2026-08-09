@@ -1,0 +1,80 @@
+{
+  "__comment": "InferaCordon Unified Grafana Dashboard — placeholder skeleton.",
+  "__note": "Full dashboard implementation: Week 7 per project schedule.",
+  "__datasource": "Prometheus at http://prometheus:9090",
+  "title": "InferaCordon Unified",
+  "uid": "inferacordon-unified-v1",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requests Per Second (ic_request_total)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(ic_request_total[1m])) by (tenant_id, budget_class)",
+          "legendFormat": "{{tenant_id}} / {{budget_class}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "P95 End-to-End Latency (ic_latency_seconds)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ic_latency_seconds_bucket[5m])) by (le, tenant_id))",
+          "legendFormat": "{{tenant_id}} P95"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Reasoning Tokens Used (ic_reasoning_tokens_used)",
+      "type": "histogram",
+      "targets": [
+        {
+          "expr": "sum(rate(ic_reasoning_tokens_used_bucket[5m])) by (le, budget_class)",
+          "legendFormat": "{{budget_class}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Semantic Cache Hit Rate",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "sum(rate(ic_cache_hit_total[5m])) / (sum(rate(ic_cache_hit_total[5m])) + sum(rate(ic_cache_miss_total[5m])))",
+          "legendFormat": "Cache Hit Rate"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Circuit Breakers (ic_circuit_breaker_open)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "ic_circuit_breaker_open",
+          "legendFormat": "{{breaker_name}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Cost Per Hour USD (ic_cost_usd_total)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(ic_cost_usd_total[1h])) * 3600",
+          "legendFormat": "Total Cost/hr"
+        }
+      ]
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"},
+  "tags": ["inferacordon", "ai-inference", "governance"]
+}

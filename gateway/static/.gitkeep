@@ -1,0 +1,3 @@
+# React SPA build output goes here.
+# Populated by: cd frontend && npm run build
+# Gateway mounts this directory as /app/static (CLAUDE.md Section 22).

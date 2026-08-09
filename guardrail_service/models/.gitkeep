@@ -1,0 +1,5 @@
+# ONNX model binaries go here — not committed to version control.
+# Required files (Week 2):
+#   llamaguard_onnx_v1.onnx   — safety classifier
+#   deberta_inject_v1.onnx    — injection classifier
+# Per CLAUDE.md Section 14.
