@@ -40,6 +40,12 @@ SAFETY_MODEL_PATH = os.environ.get(
     "/app/models/llamaguard_onnx_v1.onnx",
 )
 
+# CLAUDE.md Section 14.8: "The container fails startup if the volume mount is
+# absent or the models cannot be parsed by ONNX Runtime."
+# Set GUARDRAIL_REQUIRE_ONNX=true in production (docker-compose) to enforce this.
+# Defaults to false so tests and dev environments use heuristic fallback.
+_REQUIRE_ONNX = os.environ.get("GUARDRAIL_REQUIRE_ONNX", "false").lower() == "true"
+
 
 # ── Service state ─────────────────────────────────────────────────────────────
 
@@ -57,6 +63,24 @@ async def lifespan(app: FastAPI):
 
     injection_clf = InjectionClassifier(model_path=INJECTION_MODEL_PATH)
     safety_clf = SafetyClassifier(model_path=SAFETY_MODEL_PATH)
+
+    # CLAUDE.md Section 14.8: fail startup if ONNX models required but absent.
+    # Only enforced when GUARDRAIL_REQUIRE_ONNX=true (production).
+    if _REQUIRE_ONNX:
+        if not injection_clf._onnx_active:
+            raise RuntimeError(
+                f"GUARDRAIL_REQUIRE_ONNX=true but injection model not loaded from "
+                f"{INJECTION_MODEL_PATH!r}. "
+                "Mount the model volume or set GUARDRAIL_REQUIRE_ONNX=false for dev. "
+                "(CLAUDE.md Section 14.8)"
+            )
+        if not safety_clf._onnx_active:
+            raise RuntimeError(
+                f"GUARDRAIL_REQUIRE_ONNX=true but safety model not loaded from "
+                f"{SAFETY_MODEL_PATH!r}. "
+                "Mount the model volume or set GUARDRAIL_REQUIRE_ONNX=false for dev. "
+                "(CLAUDE.md Section 14.8)"
+            )
 
     app.state.guardrail = ServiceState(
         injection_classifier=injection_clf,
