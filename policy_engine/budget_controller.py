@@ -268,6 +268,59 @@ def _derive_route(model_name: str) -> str:
     return "cheap_model" if model_name == "qwen25-3b" else "reasoning_model"
 
 
+def escalate_budget_class(
+    target_class: str,
+    policy: "Policy",
+    fleet_state: FleetState,
+) -> BudgetDecision:
+    """
+    Build a BudgetDecision for a specific target class, bypassing complexity
+    score mapping. Used by the escalation handler in gateway/main.py.
+
+    Per CLAUDE.md Section 16: "Repeat from admission control at next higher
+    budget class." The budget decision is constructed directly from the policy
+    profile for the requested class; circuit-breaker downgrade does NOT apply
+    to escalated requests (the escalation itself is the override decision).
+
+    Args:
+        target_class: The escalated budget class ("medium"|"high"|"critical").
+        policy:       Current validated policy.
+        fleet_state:  Current fleet state (passed through for consistency).
+
+    Returns:
+        BudgetDecision for the target class with downgrade_reason="escalation".
+    """
+    profile = policy.budget_profiles[target_class]
+
+    return BudgetDecision(
+        base_class=target_class,
+        effective_class=target_class,
+        downgrade_reason="escalation",
+        model=profile.model,
+        route=_derive_route(profile.model),
+        max_reasoning_tokens=profile.max_reasoning_tokens,
+        max_output_tokens=profile.max_output_tokens,
+        priority_tier=_derive_priority_tier(target_class),
+        verification=profile.verification,
+        context_template=profile.context_template,
+        escalation_enabled=policy.escalation.enabled,
+        escalation_max_retries=policy.escalation.max_retries,
+        escalation_on_exhaustion=policy.escalation.on_exhaustion,
+        cost_ceiling_usd=policy.limits.max_cost_per_request_usd,
+        p95_latency_ms=policy.slo.p95_latency_ms,
+        quality_floor_score=policy.slo.quality_floor_score,
+        policy_id=policy.policy_id,
+        policy_version=policy.versions.policy,
+        guardrail_pii_redaction=policy.guardrails.pii_redaction,
+        guardrail_injection_check=policy.guardrails.injection_check,
+        guardrail_safety_check=policy.guardrails.safety_check,
+        guardrail_output_safety=policy.guardrails.output_safety,
+        cache_enabled=policy.cache.enabled,
+        cache_similarity_threshold=policy.cache.similarity_threshold,
+        cache_ttl_seconds=policy.cache.ttl_seconds,
+    )
+
+
 def assign_budget_class(
     complexity_score: float,
     policy: Policy,

@@ -26,6 +26,7 @@ from policy_engine.budget_controller import (
     BudgetDecision,
     DecisionRecord,
     assign_budget_class,
+    escalate_budget_class,
     downgrade_one,
 )
 from policy_engine.audit_log import (
@@ -57,6 +58,7 @@ __all__ = [
     "BudgetDecision",
     "DecisionRecord",
     "assign_budget_class",
+    "escalate_budget_class",
     "downgrade_one",
     # Audit log types
     "AuditLog",

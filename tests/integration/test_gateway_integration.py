@@ -1,5 +1,5 @@
 """
-Integration tests for the gateway request lifecycle (Phase 4 + Phase 5).
+Integration tests for the gateway request lifecycle (Phases 4, 5, and 6).
 
 These tests use FastAPI's TestClient with:
 - Real policy engine (loaded from policy_engine/policies/)
@@ -31,6 +31,7 @@ import pytest
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
+from gateway.admission_control import AdmissionController, AdmissionResult
 from gateway.auth import load_tenant_key_map
 from gateway.complexity_scorer import get_scorer
 from gateway.context_engine import ContextEngine
@@ -38,6 +39,7 @@ from gateway.guardrail_client import GuardrailClient, GuardrailDecision, Guardra
 from gateway.main import AppState
 from gateway.pii_redactor import PIIRedactor
 from gateway.schemas import InferResponse
+from gateway.semantic_cache import CacheLookupResult, SemanticCache
 from gateway.vllm_client import VLLMClient, VLLMResponse
 from policy_engine import AuditLog, PolicyRegistry
 from vllm_adapter.inference_adapter import InferenceAdapter, InferenceResult
@@ -702,3 +704,456 @@ class TestNoGuardrailClient:
             headers={"Authorization": f"Bearer {ACME_KEY}"},
         )
         assert resp.status_code == 200
+
+
+# ── Phase 6: Semantic Cache Integration ───────────────────────────────────────
+
+def _make_mock_cache(hit: bool, cached_response: str = "Cached answer.") -> MagicMock:
+    """Return a mock SemanticCache with a controlled lookup() return value."""
+    mock = MagicMock(spec=SemanticCache)
+    mock.enabled = True
+    if hit:
+        mock.lookup = AsyncMock(return_value=CacheLookupResult(
+            hit=True, response=cached_response, similarity=0.95, metadata={},
+        ))
+    else:
+        mock.lookup = AsyncMock(return_value=CacheLookupResult(hit=False))
+    mock.store = AsyncMock()
+    return mock
+
+
+def _make_app_with_cache(
+    tmp_audit_log: AuditLog,
+    cache_mock: MagicMock,
+    mock_vllm: AsyncMock,
+    guardrail_client: object = None,
+) -> TestClient:
+    """Build a TestClient with an injected SemanticCache mock."""
+    from gateway.main import health, readiness, infer, _unhandled_exception_handler
+
+    policy_registry = PolicyRegistry.load_from_dir("policy_engine/policies")
+    hard_fallback = HardBudgetFallback.from_env()
+    inference_adapter = InferenceAdapter(
+        vllm_base_url="http://mock-vllm:8080",
+        hard_budget_fallback=hard_fallback,
+    )
+
+    state = AppState(
+        policy_registry=policy_registry,
+        complexity_scorer=get_scorer(),
+        context_engine=ContextEngine(),
+        vllm_client=mock_vllm,
+        inference_adapter=inference_adapter,
+        audit_log=tmp_audit_log,
+        tenant_key_map=_TENANT_KEY_MAP,
+        vllm_base_url="http://mock-vllm:8080",
+        pii_redactor=PIIRedactor(),
+        guardrail_client=guardrail_client,
+        semantic_cache=cache_mock,
+    )
+
+    app = FastAPI()
+    app.state.gateway = state
+    app.get("/v1/health")(health)
+    app.post("/v1/infer")(infer)
+    app.add_exception_handler(Exception, _unhandled_exception_handler)
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestSemanticCacheHit:
+    """
+    Critical invariants per CLAUDE.md Section 13.3:
+    Cache hit → return immediately. No guardrail. No inference. No verification.
+    """
+
+    def _make_hit_client(self, tmp_audit_log, cached_text="Cached answer."):
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_vllm.complete = AsyncMock(return_value=_make_mock_vllm_response("From vLLM"))
+        mock_guardrail = _make_mock_guardrail(GuardrailDecision.PASS)
+        mock_cache = _make_mock_cache(hit=True, cached_response=cached_text)
+        return _make_app_with_cache(tmp_audit_log, mock_cache, mock_vllm, mock_guardrail), mock_vllm, mock_guardrail
+
+    def test_cache_hit_returns_200(self, tmp_audit_log):
+        client, _, _ = self._make_hit_client(tmp_audit_log)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "What is 2+2?"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.status_code == 200
+
+    def test_cache_hit_stop_reason(self, tmp_audit_log):
+        """Per CLAUDE.md Section 16.3: stop_reason must be 'cache_hit'."""
+        client, _, _ = self._make_hit_client(tmp_audit_log)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "What is 2+2?"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.json()["stop_reason"] == "cache_hit"
+
+    def test_cache_hit_zero_cost(self, tmp_audit_log):
+        """Cache hit has zero inference cost."""
+        client, _, _ = self._make_hit_client(tmp_audit_log)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "What is 2+2?"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.json()["estimated_cost_usd"] == 0.0
+
+    def test_cache_hit_zero_reasoning_tokens(self, tmp_audit_log):
+        """Cache hit uses zero reasoning tokens."""
+        client, _, _ = self._make_hit_client(tmp_audit_log)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "What is 2+2?"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.json()["reasoning_tokens_used"] == 0
+
+    def test_cache_hit_vllm_never_called(self, tmp_audit_log):
+        """
+        The single most important invariant for cache hits (CLAUDE.md §13.3):
+        vLLM must NEVER be called when the cache has a hit.
+        """
+        client, mock_vllm, _ = self._make_hit_client(tmp_audit_log)
+        client.post(
+            "/v1/infer",
+            json={"prompt": "What is 2+2?"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        mock_vllm.complete.assert_not_called()
+
+    def test_cache_hit_guardrail_never_called(self, tmp_audit_log):
+        """
+        Per CLAUDE.md §13.3: 'No guardrail check' on cache hit.
+        Guardrail client is injected; we verify its check_input was never called.
+        """
+        client, _, mock_guardrail = self._make_hit_client(tmp_audit_log)
+        client.post(
+            "/v1/infer",
+            json={"prompt": "What is 2+2?"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        mock_guardrail.check_input.assert_not_called()
+
+    def test_cache_hit_response_content_from_cache(self, tmp_audit_log):
+        """Response text comes from the cache, not from the mocked vLLM."""
+        client, _, _ = self._make_hit_client(tmp_audit_log, cached_text="Cached special answer.")
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "What is 2+2?"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.json()["response"] == "Cached special answer."
+
+    def test_cache_hit_escalation_count_zero(self, tmp_audit_log):
+        client, _, _ = self._make_hit_client(tmp_audit_log)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "What is 2+2?"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.json()["escalation_count"] == 0
+
+
+class TestSemanticCacheMiss:
+    """Cache miss → full inference pipeline executes normally."""
+
+    def _make_miss_client(self, tmp_audit_log):
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_vllm.complete = AsyncMock(return_value=_make_mock_vllm_response())
+        mock_cache = _make_mock_cache(hit=False)
+        return _make_app_with_cache(tmp_audit_log, mock_cache, mock_vllm), mock_vllm, mock_cache
+
+    def test_cache_miss_returns_200(self, tmp_audit_log):
+        client, _, _ = self._make_miss_client(tmp_audit_log)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "Hello world"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.status_code == 200
+
+    def test_cache_miss_vllm_is_called(self, tmp_audit_log):
+        """Miss → inference must proceed → vLLM called exactly once."""
+        client, mock_vllm, _ = self._make_miss_client(tmp_audit_log)
+        client.post(
+            "/v1/infer",
+            json={"prompt": "Hello world"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        mock_vllm.complete.assert_called_once()
+
+    def test_cache_miss_stop_reason_not_cache_hit(self, tmp_audit_log):
+        """After a miss, stop_reason reflects inference outcome — not 'cache_hit'."""
+        client, _, _ = self._make_miss_client(tmp_audit_log)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "Hello world"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.json()["stop_reason"] != "cache_hit"
+
+    def test_cache_miss_lookup_was_called(self, tmp_audit_log):
+        """Verify lookup() was actually invoked (not silently skipped)."""
+        client, _, mock_cache = self._make_miss_client(tmp_audit_log)
+        client.post(
+            "/v1/infer",
+            json={"prompt": "Hello world"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        mock_cache.lookup.assert_called_once()
+
+
+class TestSemanticCacheDisabledNone:
+    """When semantic_cache=None (default), inference proceeds with no cache interaction."""
+
+    def test_no_cache_inference_succeeds(self, app_with_mocked_vllm):
+        """Default fixture has semantic_cache=None — inference proceeds normally."""
+        resp = app_with_mocked_vllm.post(
+            "/v1/infer",
+            json={"prompt": "Hello"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.status_code == 200
+
+    def test_no_cache_stop_reason_not_cache_hit(self, app_with_mocked_vllm):
+        resp = app_with_mocked_vllm.post(
+            "/v1/infer",
+            json={"prompt": "Hello"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.json()["stop_reason"] != "cache_hit"
+
+
+# ── Phase 6: Admission Control Integration ────────────────────────────────────
+
+def _make_mock_admission(
+    admitted: bool,
+    acquired_semaphore: bool = False,
+) -> MagicMock:
+    """Return a mock AdmissionController with controlled acquire() outcome."""
+    mock = MagicMock(spec=AdmissionController)
+    mock.acquire = AsyncMock(return_value=AdmissionResult(
+        admitted=admitted,
+        reason="admitted" if admitted else "semaphore_timeout",
+        wait_ms=0.5 if admitted else 5001.0,
+        priority_tier="standard",
+        acquired_semaphore=acquired_semaphore,
+    ))
+    mock.release = MagicMock()
+    return mock
+
+
+def _make_app_with_admission(
+    tmp_audit_log: AuditLog,
+    admission_mock: MagicMock,
+    mock_vllm: AsyncMock,
+) -> TestClient:
+    """Build a TestClient with an injected AdmissionController mock."""
+    from gateway.main import health, infer, _unhandled_exception_handler
+
+    policy_registry = PolicyRegistry.load_from_dir("policy_engine/policies")
+    hard_fallback = HardBudgetFallback.from_env()
+    inference_adapter = InferenceAdapter(
+        vllm_base_url="http://mock-vllm:8080",
+        hard_budget_fallback=hard_fallback,
+    )
+
+    state = AppState(
+        policy_registry=policy_registry,
+        complexity_scorer=get_scorer(),
+        context_engine=ContextEngine(),
+        vllm_client=mock_vllm,
+        inference_adapter=inference_adapter,
+        audit_log=tmp_audit_log,
+        tenant_key_map=_TENANT_KEY_MAP,
+        vllm_base_url="http://mock-vllm:8080",
+        pii_redactor=PIIRedactor(),
+        admission_controller=admission_mock,
+    )
+
+    app = FastAPI()
+    app.state.gateway = state
+    app.get("/v1/health")(health)
+    app.post("/v1/infer")(infer)
+    app.add_exception_handler(Exception, _unhandled_exception_handler)
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestAdmissionControlRejection:
+    """
+    Per CLAUDE.md Section 6 Step 9: when queue timeout expires, gateway returns 503.
+    """
+
+    def test_rejection_returns_503(self, tmp_audit_log):
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_ctrl = _make_mock_admission(admitted=False, acquired_semaphore=False)
+
+        client = _make_app_with_admission(tmp_audit_log, mock_ctrl, mock_vllm)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "Hello"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.status_code == 503
+
+    def test_rejection_vllm_not_called(self, tmp_audit_log):
+        """Admission rejection must prevent inference — vLLM never called."""
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_vllm.complete = AsyncMock(return_value=_make_mock_vllm_response())
+        mock_ctrl = _make_mock_admission(admitted=False, acquired_semaphore=False)
+
+        client = _make_app_with_admission(tmp_audit_log, mock_ctrl, mock_vllm)
+        client.post(
+            "/v1/infer",
+            json={"prompt": "Hello"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        mock_vllm.complete.assert_not_called()
+
+    def test_rejection_error_body_has_request_id(self, tmp_audit_log):
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_ctrl = _make_mock_admission(admitted=False, acquired_semaphore=False)
+
+        client = _make_app_with_admission(tmp_audit_log, mock_ctrl, mock_vllm)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "Hello"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.status_code == 503
+        detail = resp.json().get("detail", {})
+        assert "request_id" in detail
+
+    def test_rejection_release_not_called(self, tmp_audit_log):
+        """When semaphore was never acquired (acquired_semaphore=False), release() is skipped."""
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_ctrl = _make_mock_admission(admitted=False, acquired_semaphore=False)
+
+        client = _make_app_with_admission(tmp_audit_log, mock_ctrl, mock_vllm)
+        client.post(
+            "/v1/infer",
+            json={"prompt": "Hello"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        mock_ctrl.release.assert_not_called()
+
+
+class TestAdmissionControlAdmission:
+    """When admission controller admits the request, inference proceeds normally."""
+
+    def test_admitted_returns_200(self, tmp_audit_log):
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_vllm.complete = AsyncMock(return_value=_make_mock_vllm_response())
+        mock_ctrl = _make_mock_admission(admitted=True, acquired_semaphore=True)
+
+        client = _make_app_with_admission(tmp_audit_log, mock_ctrl, mock_vllm)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "Hello world"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.status_code == 200
+
+    def test_admitted_vllm_is_called(self, tmp_audit_log):
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_vllm.complete = AsyncMock(return_value=_make_mock_vllm_response())
+        mock_ctrl = _make_mock_admission(admitted=True, acquired_semaphore=True)
+
+        client = _make_app_with_admission(tmp_audit_log, mock_ctrl, mock_vllm)
+        client.post(
+            "/v1/infer",
+            json={"prompt": "Hello world"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        mock_vllm.complete.assert_called_once()
+
+    def test_admitted_release_called_after_inference(self, tmp_audit_log):
+        """
+        Per CLAUDE.md Section 6 Step 9: caller MUST release semaphore in finally block.
+        Verify release() is called even when inference succeeds.
+        """
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_vllm.complete = AsyncMock(return_value=_make_mock_vllm_response())
+        mock_ctrl = _make_mock_admission(admitted=True, acquired_semaphore=True)
+
+        client = _make_app_with_admission(tmp_audit_log, mock_ctrl, mock_vllm)
+        client.post(
+            "/v1/infer",
+            json={"prompt": "Hello world"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        mock_ctrl.release.assert_called_once()
+
+    def test_admitted_release_called_when_inference_fails(self, tmp_audit_log):
+        """
+        The finally block must call release() even when inference raises.
+        Semaphore must not leak on failure.
+        """
+        import httpx
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_vllm.complete = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        mock_ctrl = _make_mock_admission(admitted=True, acquired_semaphore=True)
+
+        client = _make_app_with_admission(tmp_audit_log, mock_ctrl, mock_vllm)
+        resp = client.post(
+            "/v1/infer",
+            json={"prompt": "Hello world"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.status_code == 503
+        mock_ctrl.release.assert_called_once()
+
+
+class TestAdmissionControlLowBudgetBypass:
+    """
+    Per CLAUDE.md Section 6 Step 9: low budget class (cheap model) bypasses semaphore.
+    Uses a real AdmissionController with cap=0 — any reasoning request would time out.
+    Low budget requests must succeed regardless.
+    """
+
+    def test_low_budget_bypasses_full_semaphore(self, tmp_audit_log):
+        mock_vllm = AsyncMock(spec=VLLMClient)
+        mock_vllm.complete = AsyncMock(return_value=_make_mock_vllm_response())
+
+        # Real controller with cap=0 and very short timeouts — blocks all reasoning
+        real_ctrl = AdmissionController(
+            max_concurrent_reasoning=0,
+            timeout_by_priority={"low": 0.02, "standard": 0.02, "high": 0.02},
+        )
+        policy_registry = PolicyRegistry.load_from_dir("policy_engine/policies")
+        hard_fallback = HardBudgetFallback.from_env()
+        inference_adapter = InferenceAdapter(
+            vllm_base_url="http://mock-vllm:8080",
+            hard_budget_fallback=hard_fallback,
+        )
+        state = AppState(
+            policy_registry=policy_registry,
+            complexity_scorer=get_scorer(),
+            context_engine=ContextEngine(),
+            vllm_client=mock_vllm,
+            inference_adapter=inference_adapter,
+            audit_log=tmp_audit_log,
+            tenant_key_map=_TENANT_KEY_MAP,
+            vllm_base_url="http://mock-vllm:8080",
+            pii_redactor=PIIRedactor(),
+            admission_controller=real_ctrl,
+        )
+        from gateway.main import infer, _unhandled_exception_handler
+        app = FastAPI()
+        app.state.gateway = state
+        app.post("/v1/infer")(infer)
+        app.add_exception_handler(Exception, _unhandled_exception_handler)
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            "/v1/infer",
+            # budget_override=low → Qwen model → bypass admission
+            json={"prompt": "Hi", "budget_override": "low"},
+            headers={"Authorization": f"Bearer {ACME_KEY}"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["budget_class"] == "low"
