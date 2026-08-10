@@ -37,6 +37,23 @@ See [CLAUDE.md](CLAUDE.md) for the complete engineering contract.
 
 ## Metrics
 
-<!-- METRICS -->
-*Benchmark results not yet available — run after Week 9.*
-<!-- /METRICS -->
+<!-- METRICS:BEGIN -->
+
+## Benchmark Results
+
+> ⚠ **METRICS NOT YET MEASURED**
+>
+> No complete benchmark runs found in `evaluation/results/`.
+> 0 run(s) are BLOCKED (GPU infrastructure required).
+>
+> To produce metrics:
+> ```
+> docker compose up
+> python evaluation/benchmark_harness.py run --baseline 3 --dataset all
+> python evaluation/benchmark_harness.py run --baseline 6 --dataset all
+> python evaluation/update_readme_metrics.py
+> ```
+>
+> Per CLAUDE.md Section 27: metrics may not be hand-written.
+
+<!-- METRICS:END -->

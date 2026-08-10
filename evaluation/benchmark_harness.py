@@ -404,21 +404,32 @@ def _call_gateway(
     """
     Gateway call for baselines 4–6 (full InferaCordon pipeline).
     GPU REQUIRED.
+
+    KNOWN LIMITATION — Baselines 4 and 5 isolation (Phase 9 dependency):
+    -----------------------------------------------------------------------
+    Baselines 4 and 5 are intended to isolate gateway routing without
+    LogitProcessor stopping (baseline 4) and with escalation but without
+    LogitProcessor (baseline 5).  Properly isolating these requires the
+    gateway to accept per-request control flags (e.g. disable_logit_processor,
+    disable_escalation) that are NOT in the current CLAUDE.md §7.1 API contract.
+
+    Until the gateway API is extended in Phase 9 to support these flags,
+    baselines 4 and 5 will behave identically to baseline 6 (full InferaCordon).
+    The ablation study will document this as a known gap — the two baselines
+    will be labelled "NOT INDEPENDENTLY ISOLATABLE — gateway extension required"
+    in the benchmark output.
+
+    DO NOT add disable_logit_processor or disable_escalation to the request
+    payload without first adding them to the gateway InferRequest model and
+    the CLAUDE.md §7.1 API contract, and recording an Architecture Deviation
+    Protocol entry (CLAUDE.md §28) if needed.
     """
     import httpx
-
-    if baseline == BaselineLabel.POLICY_NO_STOPPING.value:
-        extra: dict = {"disable_logit_processor": True, "disable_escalation": True}
-    elif baseline == BaselineLabel.POLICY_ESCALATION.value:
-        extra = {"disable_logit_processor": True, "disable_escalation": False}
-    else:
-        extra = {}
 
     payload = {
         "prompt": prompt,
         "tenant_id": "benchmark_tenant",
         "domain": "evaluation",
-        **extra,
     }
 
     resp = httpx.post(

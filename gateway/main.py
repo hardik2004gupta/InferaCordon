@@ -30,7 +30,15 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+try:
+    from opentelemetry import trace as otel_trace
+    _OTEL_AVAILABLE = True
+except ImportError:
+    otel_trace = None  # type: ignore[assignment]
+    _OTEL_AVAILABLE = False
 
 from gateway.admission_control import AdmissionController, AdmissionResult
 from gateway.auth import load_tenant_key_map, verify_api_key
@@ -47,9 +55,28 @@ from gateway.schemas import (
     ReadinessResponse,
 )
 from gateway.semantic_cache import CacheLookupResult, SemanticCache
+from gateway.async_eval_worker import AsyncEvalWorker, EvalTask
 from gateway.trace_context import TraceContext, create_trace_context
 from gateway.verifier_client import VerificationResult, VerifierClient, VerifierResponse
 from gateway.vllm_client import VLLMClient, VLLMRequest
+from telemetry.otel_config import configure_otel, get_tracer
+from telemetry.prometheus_metrics import (
+    ic_budget_ceiling_hit_total,
+    ic_cache_hit_total,
+    ic_cache_miss_total,
+    ic_complexity_score_histogram,
+    ic_cost_usd_total,
+    ic_escalation_total,
+    ic_fast_path_activations_total,
+    ic_guardrail_block_total,
+    ic_latency_seconds,
+    ic_reasoning_tokens_used,
+    ic_request_cost_usd,
+    ic_request_total,
+    ic_tokens_reasoning_saved,
+    ic_ttft_seconds,
+    setup_metrics,
+)
 from policy_engine import (
     AuditLog,
     BudgetDecision,
@@ -82,6 +109,9 @@ VLLM_TIMEOUT             = float(_env("VLLM_TIMEOUT_SECONDS", "60.0"))
 SERVE_FRONTEND           = _env("SERVE_FRONTEND",             "false").lower() == "true"
 CACHE_PERSIST_PATH       = _env("CACHE_PERSIST_PATH",         "data/cache")
 ADMISSION_MAX_CONCURRENT = int(_env("ADMISSION_MAX_CONCURRENT", "10"))
+JAEGER_OTLP_ENDPOINT     = _env("JAEGER_OTLP_ENDPOINT",       "http://localhost:4317")
+EVAL_SQLITE_PATH         = _env("EVAL_SQLITE_PATH",           "data/eval.db")
+EVAL_MAX_WORKERS         = int(_env("EVAL_MAX_WORKERS",        "2"))
 
 _INJECTION_THRESHOLD = 0.70
 _SAFETY_THRESHOLD    = 0.80
@@ -127,6 +157,8 @@ class AppState:
     verifier_client: Optional[VerifierClient] = None
     # Phase 7: stateless; can be shared across requests.
     escalation_handler: EscalationHandler = field(default_factory=EscalationHandler)
+    # Phase 9: None when OPENAI_API_KEY absent or eval disabled.
+    async_eval_worker: Optional[AsyncEvalWorker] = None
 
 
 # ── Per-attempt outcome ───────────────────────────────────────────────────────
@@ -150,7 +182,22 @@ async def lifespan(app: FastAPI):
     Gateway startup / shutdown lifecycle.
     Per CLAUDE.md Section 6 and Section 29.
     """
-    log.info("InferaCordon gateway starting — Phase 7")
+    log.info("InferaCordon gateway starting — Phase 9")
+
+    # ── OTel: configure before first request (fail-open per §17 Failure Mode 9)
+    configure_otel(
+        service_name=_env("OTEL_SERVICE_NAME", "ic-gateway"),
+        otlp_endpoint=JAEGER_OTLP_ENDPOINT,
+    )
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        FastAPIInstrumentor.instrument_app(app)
+        log.info("FastAPI OTel auto-instrumentation enabled")
+    except Exception as _otel_exc:
+        log.warning("FastAPI OTel instrumentation failed (non-fatal): %s", _otel_exc)
+
+    # ── Prometheus: initialize gauge state ────────────────────────────────────
+    setup_metrics()
 
     tenant_key_map = load_tenant_key_map(TENANTS_YAML)
     if not tenant_key_map:
@@ -195,6 +242,9 @@ async def lifespan(app: FastAPI):
     audit_log = AuditLog(log_path=AUDIT_LOG_PATH)
     audit_log.start()
 
+    # ── Async eval worker (Phase 9) ───────────────────────────────────────────
+    eval_worker = AsyncEvalWorker(db_path=EVAL_SQLITE_PATH, max_workers=EVAL_MAX_WORKERS)
+
     app.state.gateway = AppState(
         policy_registry=policy_registry,
         complexity_scorer=complexity_scorer,
@@ -209,6 +259,7 @@ async def lifespan(app: FastAPI):
         semantic_cache=semantic_cache,
         admission_controller=admission_controller,
         verifier_client=verifier_client,
+        async_eval_worker=eval_worker,
     )
 
     if SERVE_FRONTEND:
@@ -227,6 +278,8 @@ async def lifespan(app: FastAPI):
         await s.verifier_client.close()
     if s.semantic_cache is not None:
         s.semantic_cache.stop()
+    if s.async_eval_worker is not None:
+        await s.async_eval_worker.shutdown()
     log.info("InferaCordon gateway shutdown complete")
 
 
@@ -294,6 +347,12 @@ async def readiness(request: Request) -> ReadinessResponse:
     )
 
 
+@app.get("/metrics", tags=["Operations"], include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """Prometheus scrape endpoint. All ic_ prefixed metrics + runtime state."""
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.post("/v1/infer", response_model=InferResponse, tags=["Inference"])
 async def infer(
     body: InferRequest,
@@ -334,6 +393,14 @@ async def infer(
     # ── Step 3 ────────────────────────────────────────────────────────────────
     trace: TraceContext = create_trace_context(request, tenant_id)
     request_id = trace.request_id
+
+    # Annotate the current OTel span (created by FastAPIInstrumentor) with IC attributes.
+    # get_current_span() returns a NoOp span when OTel is not configured — always safe.
+    if _OTEL_AVAILABLE and otel_trace is not None:
+        _span = otel_trace.get_current_span()
+        _span.set_attribute("ic.request_id", request_id)
+        _span.set_attribute("ic.tenant_id", tenant_id)
+        _span.set_attribute("ic.domain", body.domain)
 
     # ── Step 4 ────────────────────────────────────────────────────────────────
     t_complexity_start = time.perf_counter()
@@ -385,6 +452,21 @@ async def infer(
             policy=policy,
             fleet_state=fleet_state,
         )
+
+    # OTel: annotate budget decision on span
+    if _OTEL_AVAILABLE and otel_trace is not None:
+        _span.set_attribute("ic.base_budget_class", budget_decision.base_class)
+        _span.set_attribute("ic.effective_budget_class", budget_decision.effective_class)
+        _span.set_attribute("ic.model", budget_decision.model)
+        _span.set_attribute("ic.max_reasoning_tokens", budget_decision.max_reasoning_tokens)
+
+    # Prometheus: complexity score distribution
+    try:
+        ic_complexity_score_histogram.labels(domain=domain).observe(complexity_result.score)
+        if complexity_result.score < 0:
+            ic_fast_path_activations_total.inc()
+    except Exception:
+        pass
 
     # ── Step 7: Build decision record (enqueue deferred — need cache_hit) ─────
     decision_record = DecisionRecord.from_budget_decision(
@@ -727,6 +809,68 @@ async def _run_escalation_loop(
         verification_result=final_outcome.verification_result,
         escalation_count=escalation_count,
     )
+
+    # ── Step 15b: Prometheus metric updates (best-effort, non-blocking) ───────
+    try:
+        _reasoning_used = getattr(inference_result, "reasoning_tokens_used", 0)
+        _ttft = getattr(inference_result, "ttft_ms", 0.0) or 0.0
+        _route = current_budget.model
+
+        ic_request_total.labels(
+            tenant_id=effective_tenant,
+            domain=domain,
+            budget_class=current_budget.effective_class,
+            route=_route,
+            cache_hit="false",
+        ).inc()
+        ic_latency_seconds.labels(
+            tenant_id=effective_tenant,
+            budget_class=current_budget.effective_class,
+        ).observe(total_latency_ms / 1000.0)
+        if _ttft > 0:
+            ic_ttft_seconds.labels(model_version=_route).observe(_ttft / 1000.0)
+        ic_reasoning_tokens_used.labels(
+            budget_class=current_budget.effective_class,
+            model_version=_route,
+        ).observe(_reasoning_used)
+        ic_tokens_reasoning_saved.labels(
+            tenant_id=effective_tenant,
+            budget_class=current_budget.effective_class,
+        ).observe(max(0, current_budget.max_reasoning_tokens - _reasoning_used))
+        ic_cost_usd_total.labels(tenant_id=effective_tenant).inc(final_outcome.actual_cost_usd)
+        ic_request_cost_usd.labels(
+            tenant_id=effective_tenant,
+            budget_class=current_budget.effective_class,
+            route=_route,
+        ).observe(final_outcome.actual_cost_usd)
+        if escalation_count > 0:
+            ic_escalation_total.labels(
+                from_class=initial_budget_decision.effective_class,
+                to_class=current_budget.effective_class,
+            ).inc(escalation_count)
+    except Exception:
+        pass  # Prometheus failure must never affect request outcome
+
+    # ── Step 16: Async evaluation (background, post-response) per §6.3 ───────
+    # LLM judge is called only for non-verifiable responses (no ground truth).
+    # Verifiable correct/incorrect responses are scored by the verifier service.
+    if (
+        state.async_eval_worker is not None
+        and final_outcome.verification_result in ("skipped", "unverifiable", "async_pending")
+    ):
+        try:
+            state.async_eval_worker.submit(EvalTask(
+                request_id=request_id,
+                tenant_id=effective_tenant,
+                domain=domain,
+                prompt=redacted_prompt,
+                response=final_outcome.content,
+                budget_class=current_budget.effective_class,
+                verification_result=final_outcome.verification_result,
+                policy_version=current_budget.policy_version,
+            ))
+        except Exception:
+            pass  # Eval submission failure must never affect request outcome
 
     return response
 

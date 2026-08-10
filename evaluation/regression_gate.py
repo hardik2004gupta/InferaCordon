@@ -157,7 +157,27 @@ def evaluate_slice(
     Gate FAILS when governed accuracy falls more than threshold_pp below baseline.
 
     Per §9: absolute percentage-point difference, NOT relative change.
+
+    BLOCKED guard: if either experiment has sample_count==0 (BLOCKED result),
+    the comparison is invalid — gate FAILS with threshold_pp=0.0 to make the
+    failure reason visible. Two BLOCKED results must NOT produce a false PASS
+    (which would happen if both accuracies were 0.0 and delta=0.0).
     """
+    # Guard: refuse to compare BLOCKED (zero-sample) experiments.
+    # A BLOCKED result has sample_count==0 and accuracy==0.0 — comparing two
+    # BLOCKED results would yield delta=0.0 and falsely PASS the gate.
+    if baseline_m.sample_count == 0 or governed_m.sample_count == 0:
+        return SliceGateResult(
+            slice_name=slice_name,
+            dataset=dataset,
+            dataset_kind=baseline_m.dataset_kind,
+            baseline_accuracy=baseline_m.accuracy,
+            governed_accuracy=governed_m.accuracy,
+            accuracy_delta_pp=0.0,
+            threshold_pp=0.0,
+            passed=False,  # BLOCKED — no real data to compare
+        )
+
     kind = DatasetKind(baseline_m.dataset_kind)
 
     if dataset in VERIFIABLE_DATASETS or kind == DatasetKind.VERIFIABLE:

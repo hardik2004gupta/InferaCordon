@@ -353,6 +353,79 @@ class TestComplianceHelpers:
         assert _check_escalation_compliance({"gsm8k": m}) is False
 
 
+# ── BLOCKED result guard ─────────────────────────────────────────────────────
+
+class TestBlockedResultGuard:
+    """
+    Tests that BLOCKED (sample_count==0) results never produce a false PASS.
+
+    Regression guard for HIGH defect fixed in Phase 8.5 audit:
+    Two BLOCKED experiments both have accuracy==0.0. Without the guard,
+    delta = 0.0 - 0.0 = 0.0pp → PASS, which is a false positive because
+    neither experiment actually ran.
+    """
+
+    def _blocked_metrics(self, dataset: str = "gsm8k") -> DatasetMetrics:
+        return DatasetMetrics(
+            dataset=dataset,
+            dataset_kind=DatasetKind.VERIFIABLE.value,
+            baseline=3,
+            sample_count=0,
+            correct=0, incorrect=0, unverifiable=0, error_count=0,
+            accuracy=0.0,
+            total_cost_usd=0.0,
+            cost_per_correct_usd=float("inf"),
+            avg_reasoning_tokens=0.0,
+            avg_output_tokens=0.0,
+            avg_latency_ms=0.0,
+            p95_latency_ms=0.0,
+            cache_hit_rate=0.0,
+            escalation_rate=0.0,
+        )
+
+    def test_blocked_vs_blocked_fails_gate(self):
+        """Two BLOCKED experiments must NOT yield a false PASS."""
+        baseline = {"gsm8k": self._blocked_metrics()}
+        governed = {"gsm8k": self._blocked_metrics()}
+        result = evaluate_gate(baseline, governed)
+        assert result.passed is False
+
+    def test_blocked_baseline_fails_slice(self):
+        """evaluate_slice with BLOCKED baseline returns passed=False."""
+        blocked = self._blocked_metrics()
+        real = DatasetMetrics(
+            dataset="gsm8k", dataset_kind=DatasetKind.VERIFIABLE.value, baseline=6,
+            sample_count=100, correct=80, incorrect=20, unverifiable=0, error_count=0,
+            accuracy=0.80, total_cost_usd=1.0, cost_per_correct_usd=0.0125,
+            avg_reasoning_tokens=300.0, avg_output_tokens=150.0,
+            avg_latency_ms=1500.0, p95_latency_ms=3000.0,
+            cache_hit_rate=0.0, escalation_rate=0.0,
+        )
+        sr = evaluate_slice("gsm8k", "gsm8k", blocked, real)
+        assert sr.passed is False
+
+    def test_blocked_governed_fails_slice(self):
+        """evaluate_slice with BLOCKED governed returns passed=False."""
+        real = DatasetMetrics(
+            dataset="gsm8k", dataset_kind=DatasetKind.VERIFIABLE.value, baseline=3,
+            sample_count=100, correct=80, incorrect=20, unverifiable=0, error_count=0,
+            accuracy=0.80, total_cost_usd=1.0, cost_per_correct_usd=0.0125,
+            avg_reasoning_tokens=300.0, avg_output_tokens=150.0,
+            avg_latency_ms=1500.0, p95_latency_ms=3000.0,
+            cache_hit_rate=0.0, escalation_rate=0.0,
+        )
+        blocked = self._blocked_metrics()
+        sr = evaluate_slice("gsm8k", "gsm8k", real, blocked)
+        assert sr.passed is False
+
+    def test_real_vs_real_still_passes_normally(self):
+        """Regression: adding the BLOCKED guard must not break real comparisons."""
+        baseline = {"gsm8k": _gsm8k_metrics(correct=80, incorrect=20)}
+        governed = {"gsm8k": _gsm8k_metrics(correct=81, incorrect=19)}  # +1pp
+        result = evaluate_gate(baseline, governed)
+        assert result.passed is True
+
+
 # ── GateResult.to_dict / print_report ────────────────────────────────────────
 
 class TestGateResultOutput:

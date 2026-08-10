@@ -155,16 +155,40 @@ class TestComputeDatasetMetrics:
         assert m.accuracy == 0.0
         assert m.accounting_valid
 
-    def test_accounting_invariant_enforced(self):
-        """compute_dataset_metrics must raise if accounting fails (sanity: can't happen with valid outcomes)."""
-        # This test verifies the function RAISES if something is miscounted.
-        # We test it via validate_sample_accounting instead (accounting validated after-the-fact).
+    def test_accounting_invariant_enforced_via_mutation(self):
+        """validate_sample_accounting detects post-hoc accounting inconsistencies.
+
+        Note: the guard INSIDE compute_dataset_metrics (which raises ValueError) is
+        technically unreachable via valid SingleResult inputs, because SingleResult.
+        __post_init__ enforces that verification_outcome is one of the four enum
+        values — so every result is always counted in exactly one category.
+        The guard is defensive programming for future enum extension.
+
+        This test covers the guard via validate_sample_accounting (the correct
+        external API for post-hoc validation) by mutating sample_count after the
+        fact to simulate a corruption scenario.
+        """
         results = [_make_result("ex1", outcome="correct")]
         m = compute_dataset_metrics(results, "gsm8k", DatasetKind.VERIFIABLE, baseline=3)
-        # Mutate sample_count to create an inconsistency
-        m.sample_count += 1
+        m.sample_count += 1  # corrupt sample_count
         errors = validate_sample_accounting(m)
-        assert errors  # should detect the inconsistency
+        assert errors
+        assert "sample_count" in errors[0]
+
+    def test_accounting_invariant_enforced_direct(self):
+        """compute_dataset_metrics raises ValueError when an unknown outcome bypasses validation.
+
+        This test exercises the defensive guard at line 72-77 of metric_calculator.py
+        directly by patching verification_outcome to an unknown string AFTER SingleResult
+        creation (bypassing __post_init__ validation). Under this condition,
+        none of the four outcome buckets match and accounted < n.
+        """
+        result = _make_result("ex1", outcome="correct")
+        # Bypass __post_init__ to inject an unknown outcome string
+        result.verification_outcome = "not_a_valid_outcome"  # noqa: direct attribute write
+
+        with pytest.raises(ValueError, match="Sample accounting failure"):
+            compute_dataset_metrics([result], "gsm8k", DatasetKind.VERIFIABLE, baseline=3)
 
     def test_cache_hit_rate(self):
         results = (

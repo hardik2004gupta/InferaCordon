@@ -1,50 +1,79 @@
 {
-  "__comment": "InferaCordon Unified Grafana Dashboard — placeholder skeleton.",
-  "__note": "Full dashboard implementation: Week 7 per project schedule.",
-  "__datasource": "Prometheus at http://prometheus:9090",
   "title": "InferaCordon Unified",
   "uid": "inferacordon-unified-v1",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "tags": ["inferacordon", "ai-inference", "governance"],
+  "annotations": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant_id",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(ic_request_total, tenant_id)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "label": "Tenant"
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
-      "title": "Requests Per Second (ic_request_total)",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "sum(rate(ic_request_total[1m])) by (tenant_id, budget_class)",
-          "legendFormat": "{{tenant_id}} / {{budget_class}}"
-        }
-      ]
+      "type": "row",
+      "title": "Cost",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
     },
     {
       "id": 2,
-      "title": "P95 End-to-End Latency (ic_latency_seconds)",
       "type": "timeseries",
+      "title": "Request Cost by Budget Class (USD/req)",
+      "description": "Actual cost per request, split by budget class. Measures the cost of the inference control-plane decisions.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(ic_latency_seconds_bucket[5m])) by (le, tenant_id))",
-          "legendFormat": "{{tenant_id}} P95"
+          "expr": "histogram_quantile(0.50, sum(rate(ic_request_cost_usd_bucket[5m])) by (le, budget_class))",
+          "legendFormat": "P50 {{budget_class}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ic_request_cost_usd_bucket[5m])) by (le, budget_class))",
+          "legendFormat": "P95 {{budget_class}}"
         }
       ]
     },
     {
       "id": 3,
-      "title": "Reasoning Tokens Used (ic_reasoning_tokens_used)",
-      "type": "histogram",
-      "targets": [
-        {
-          "expr": "sum(rate(ic_reasoning_tokens_used_bucket[5m])) by (le, budget_class)",
-          "legendFormat": "{{budget_class}}"
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "title": "Semantic Cache Hit Rate",
       "type": "gauge",
+      "title": "Semantic Cache Hit Rate",
+      "description": "Fraction of requests served from FAISS cache — avoids inference entirely.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "green", "value": 0.3 }
+            ]
+          }
+        }
+      },
       "targets": [
         {
           "expr": "sum(rate(ic_cache_hit_total[5m])) / (sum(rate(ic_cache_hit_total[5m])) + sum(rate(ic_cache_miss_total[5m])))",
@@ -53,9 +82,130 @@
       ]
     },
     {
-      "id": 5,
-      "title": "Circuit Breakers (ic_circuit_breaker_open)",
+      "id": 4,
+      "type": "bargauge",
+      "title": "Reasoning Tokens Saved (per budget class)",
+      "description": "Tokens NOT consumed due to natural </think> boundary or LogitProcessor enforcement.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": { "orientation": "horizontal" }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ic_tokens_reasoning_saved_sum[5m])) by (budget_class) / sum(rate(ic_tokens_reasoning_saved_count[5m])) by (budget_class)",
+          "legendFormat": "{{budget_class}} avg saved"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Quality",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "LLM Judge Score (rolling avg)",
+      "description": "GPT-4o-mini quality scores (1-5) from async evaluation worker. Dashed line = policy quality floor (3.5).",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 1,
+          "max": 5,
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ic_quality_score_histogram_sum[10m])) by (tenant_id) / sum(rate(ic_quality_score_histogram_count[10m])) by (tenant_id)",
+          "legendFormat": "{{tenant_id}} avg"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "gauge",
+      "title": "Verification Pass Rate",
+      "description": "Fraction of verifiable requests (GSM8K / MATH / schema) that passed on first attempt.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "yellow", "value": 0.7 },
+              { "color": "green", "value": 0.9 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "1 - (sum(rate(ic_escalation_total[5m])) / sum(rate(ic_request_total[5m])))",
+          "legendFormat": "Verification Pass Rate"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Escalation Rate (budget upgrades triggered)",
+      "description": "Fraction of requests that triggered budget class escalation due to verification failure.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ic_escalation_total[5m])) by (from_class, to_class) / sum(rate(ic_request_total[5m]))",
+          "legendFormat": "{{from_class}}→{{to_class}}"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Reliability",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 }
+    },
+    {
+      "id": 21,
       "type": "stat",
+      "title": "Circuit Breaker States",
+      "description": "0 = CLOSED (healthy), 1 = OPEN (degraded). Both should be 0 under normal load.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "CLOSED", "color": "green" }, "1": { "text": "OPEN", "color": "red" } } }
+          ],
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "custom": { "displayMode": "lcd" }
+        }
+      },
       "targets": [
         {
           "expr": "ic_circuit_breaker_open",
@@ -64,17 +214,196 @@
       ]
     },
     {
-      "id": 6,
-      "title": "Cost Per Hour USD (ic_cost_usd_total)",
-      "type": "stat",
+      "id": 22,
+      "type": "gauge",
+      "title": "Admission Control Queue Depth",
+      "description": "Requests waiting for a reasoning model semaphore slot. Non-zero under heavy load.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        }
+      },
       "targets": [
         {
-          "expr": "sum(rate(ic_cost_usd_total[1h])) * 3600",
-          "legendFormat": "Total Cost/hr"
+          "expr": "ic_admission_control_queue_depth",
+          "legendFormat": "Queue Depth"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Rate Limit & Admission Rejections",
+      "description": "Requests turned away by rate limiter (429) or admission control (503).",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ic_rate_limit_exceeded_total[1m])) by (tenant_id)",
+          "legendFormat": "rate_limit {{tenant_id}}"
+        },
+        {
+          "expr": "sum(rate(ic_admission_rejected_total[1m])) by (reason)",
+          "legendFormat": "admission {{reason}}"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "Performance",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "P50 / P95 / P99 End-to-End Latency",
+      "description": "End-to-end request latency at key quantiles. P95 target = policy SLO (4000ms default).",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 26 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 5 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(ic_latency_seconds_bucket[5m])) by (le)) * 1000",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ic_latency_seconds_bucket[5m])) by (le)) * 1000",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(ic_latency_seconds_bucket[5m])) by (le)) * 1000",
+          "legendFormat": "P99"
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Time To First Token (P50 / P95)",
+      "description": "TTFT per model. Reasoning model (DeepSeek) is slower due to thinking tokens.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 26 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(ic_ttft_seconds_bucket[5m])) by (le, model_version)) * 1000",
+          "legendFormat": "P50 {{model_version}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ic_ttft_seconds_bucket[5m])) by (le, model_version)) * 1000",
+          "legendFormat": "P95 {{model_version}}"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Throughput (requests/sec)",
+      "description": "Request throughput by budget class. Low class = cheap model; high class = reasoning model.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 26 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ic_request_total[1m])) by (budget_class)",
+          "legendFormat": "{{budget_class}}"
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "type": "row",
+      "title": "Governance",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 }
+    },
+    {
+      "id": 41,
+      "type": "piechart",
+      "title": "Budget Class Distribution (last 1h)",
+      "description": "How the complexity scorer and policy engine are allocating requests across budget classes.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 35 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        {
+          "expr": "sum(increase(ic_request_total[1h])) by (budget_class)",
+          "legendFormat": "{{budget_class}}"
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "Guardrail Blocks (input + output)",
+      "description": "Requests blocked or flagged by the guardrail service. Spike = potential attack or policy issue.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 35 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ic_guardrail_block_total[5m])) by (check_type, classifier)",
+          "legendFormat": "{{check_type}} / {{classifier}}"
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "type": "timeseries",
+      "title": "Budget Ceiling Enforcement (LogitProcessor forced </think>)",
+      "description": "Requests where the LogitProcessor had to force the </think> delimiter at the budget ceiling — model did not stop naturally.",
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 35 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ic_budget_ceiling_hit_total[5m])) by (budget_class)",
+          "legendFormat": "{{budget_class}}"
         }
       ]
     }
-  ],
-  "time": {"from": "now-1h", "to": "now"},
-  "tags": ["inferacordon", "ai-inference", "governance"]
+  ]
 }
