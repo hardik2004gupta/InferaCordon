@@ -1,0 +1,79 @@
+# InferaCordon System Default Policy
+# Used when tenant+domain has no explicit policy (CLAUDE.md Section 17 Failure Mode 7).
+# Conservative limits — assumes unknown workload characteristics.
+# tenant: "default" is the reserved identifier for the fallback policy.
+# Requires a gateway restart to update (CLAUDE.md Section 11.4).
+
+policy_id: system_default_v1
+tenant: default
+domain: general
+schema_version: 1
+
+budget_profiles:
+  low:
+    model: qwen25-3b
+    max_reasoning_tokens: 0
+    max_output_tokens: 256
+    verification: none
+    context_template: direct
+  medium:
+    model: deepseek-r1-7b
+    max_reasoning_tokens: 256
+    max_output_tokens: 512
+    verification: verifiable_only
+    context_template: step_by_step
+  high:
+    model: deepseek-r1-7b
+    max_reasoning_tokens: 512
+    max_output_tokens: 512
+    verification: required
+    context_template: verify_steps
+  critical:
+    model: deepseek-r1-7b
+    max_reasoning_tokens: 1024
+    max_output_tokens: 512
+    verification: required
+    context_template: verify_steps
+
+complexity_thresholds:
+  low_max: 3.5
+  medium_max: 6.5
+  high_max: 8.5
+
+guardrails:
+  pii_redaction: standard
+  injection_check: always
+  safety_check: always
+  output_safety: sync
+
+limits:
+  requests_per_minute: 10
+  tokens_per_hour: 50000
+  max_cost_per_request_usd: 0.02
+  max_prompt_tokens: 2048
+
+slo:
+  p95_latency_ms: 6000
+  quality_floor_score: 3.0
+  quality_regression_pp: 2.0
+
+cache:
+  enabled: false
+  similarity_threshold: 0.95
+  ttl_seconds: 1800
+
+escalation:
+  enabled: false
+  max_retries: 0
+  on_exhaustion: return_low_confidence
+
+versions:
+  policy: 1
+  system_prompt: prompt_v1
+  complexity_scorer: scorer_v1
+  guardrail_model: llamaguard_onnx_v1
+  injection_model: deberta_inject_v1
+  verifier: verifier_v1
+
+trace_retention_days: 7
+store_reasoning_trace: false
