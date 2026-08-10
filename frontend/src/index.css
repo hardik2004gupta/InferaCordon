@@ -1,0 +1,126 @@
+/* InferaCordon Design System
+ * Light canvas + dark governance surfaces.
+ * Phase 10 visual identity: enterprise AI governance control plane.
+ */
+
+:root {
+  /* ── Light canvas ── */
+  --bg-app:     #F4F6F9;
+  --bg-surface: #FFFFFF;
+  --bg-surface-2: #F0F2F7;
+
+  /* ── Dark governance surfaces ── */
+  --bg-gov:     #1A2332;
+  --bg-gov-2:   #243044;
+  --bg-gov-3:   #2D3A52;
+  --bg-gov-4:   #364460;
+
+  /* ── Borders ── */
+  --border:     #E2E8F0;
+  --border-2:   #CBD5E1;
+  --border-gov: rgba(255, 255, 255, 0.08);
+
+  /* ── Text — light surfaces ── */
+  --text-primary:   #0F172A;
+  --text-secondary: #475569;
+  --text-muted:     #94A3B8;
+
+  /* ── Text — dark (gov) surfaces ── */
+  --text-gov:       #F0F6FC;
+  --text-gov-2:     #94A3B8;
+  --text-gov-3:     #64748B;
+
+  /* ── Accent ── */
+  --accent:       #4F46E5;
+  --accent-light: #818CF8;
+  --accent-glow:  rgba(79, 70, 229, 0.12);
+
+  /* ── Status ── */
+  --pass:    #10B981;
+  --pass-bg: rgba(16, 185, 129, 0.1);
+  --warn:    #F59E0B;
+  --warn-bg: rgba(245, 158, 11, 0.1);
+  --fail:    #EF4444;
+  --fail-bg: rgba(239, 68, 68, 0.1);
+  --info:    #3B82F6;
+  --info-bg: rgba(59, 130, 246, 0.1);
+  --unknown: #94A3B8;
+
+  /* ── Budget classes ── */
+  --budget-low:      #10B981;
+  --budget-medium:   #4F46E5;
+  --budget-high:     #F59E0B;
+  --budget-critical: #EF4444;
+
+  /* ── Typography ── */
+  --font-ui:   'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* ── Spacing (8px grid) ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ── Radius ── */
+  --radius-sm: 4px;
+  --radius:    8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* ── Shadow ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow:    0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-gov: 0 4px 16px rgba(0, 0, 0, 0.24);
+
+  /* ── Transitions ── */
+  --transition: 150ms ease-out;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Mono utility ── */
+.mono { font-family: var(--font-mono); }
+
+/* ── Truncate ── */
+.truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Focus ring ── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

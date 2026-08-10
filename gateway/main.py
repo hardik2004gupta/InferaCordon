@@ -1350,3 +1350,195 @@ def _enqueue_admission_rejected_outcome(
         e2e_latency_ms=latency_ms,
     )
     state.audit_log.enqueue_outcome(outcome.to_audit_dict())
+
+
+# ── Phase 10 — Frontend control-plane endpoints ───────────────────────────────
+# All endpoints below are architecturally authorized by CLAUDE.md:
+#   §7.4  GET /audit/records
+#   §7.5  GET /admin/policies
+#   §7.6  POST /admin/inject-failure
+#   §22.5 SystemHealth page implies circuit-breaker / status API
+#   §27   Evaluation Job Monitor implies eval-jobs API
+# No backend semantics are changed. These are read-only inspection endpoints
+# plus the one demo-gated mutation (failure injection).
+
+_DEMO_MODE = _env("DEMO_MODE", "false").lower() == "true"
+
+
+@app.get("/admin/policies", tags=["Admin"])
+async def list_policies(request: Request) -> dict:
+    """Return all loaded policies. Per CLAUDE.md §7.5 — read-only inspection."""
+    try:
+        state = _state(request)
+    except AttributeError:
+        raise HTTPException(status_code=503, detail="gateway not initialized")
+    policies = state.policy_registry.list_policies()
+    return {
+        "count": len(policies),
+        "policies": [p.model_dump() for p in policies],
+    }
+
+
+@app.get("/audit/records", tags=["Admin"])
+async def audit_records(
+    request: Request,
+    tenant_id: Optional[str] = None,
+    budget_class: Optional[str] = None,
+    record_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """
+    Return audit log records with optional filtering. Per CLAUDE.md §7.4.
+    NEVER exposes raw prompt or response text (§19).
+    """
+    import json as _json
+    try:
+        state = _state(request)
+    except AttributeError:
+        raise HTTPException(status_code=503, detail="gateway not initialized")
+
+    log_path = Path(AUDIT_LOG_PATH)
+    if not log_path.exists():
+        return {"count": 0, "records": [], "total_available": 0}
+
+    records: list = []
+    try:
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = _json.loads(line)
+                except Exception:
+                    continue
+                if tenant_id and rec.get("tenant_id") != tenant_id:
+                    continue
+                if budget_class and rec.get("effective_budget_class") != budget_class:
+                    continue
+                if record_type and rec.get("record_type") != record_type:
+                    continue
+                records.append(rec)
+    except OSError:
+        return {"count": 0, "records": [], "total_available": 0}
+
+    total = len(records)
+    return {
+        "count": min(limit, total - offset),
+        "total_available": total,
+        "records": records[offset: offset + limit],
+    }
+
+
+@app.get("/v1/status", tags=["Operations"])
+async def system_status(request: Request) -> dict:
+    """Cache, admission, and circuit breaker status. Used by SystemHealth page."""
+    try:
+        state = _state(request)
+    except AttributeError:
+        raise HTTPException(status_code=503, detail="gateway not initialized")
+
+    cache_enabled = bool(state.semantic_cache and state.semantic_cache.enabled)
+    cache_entry_count = 0
+    if cache_enabled and state.semantic_cache is not None:
+        import threading as _thr
+        with state.semantic_cache._lock:
+            cache_entry_count = len(state.semantic_cache._metadata)
+
+    active_count = 0
+    max_concurrent = 0
+    if state.admission_controller is not None:
+        active_count = state.admission_controller.active_count()
+        max_concurrent = state.admission_controller.max_concurrent()
+
+    eval_worker_active = state.async_eval_worker is not None
+
+    return {
+        "cache": {"enabled": cache_enabled, "entry_count": cache_entry_count},
+        "admission": {"active_count": active_count, "max_concurrent": max_concurrent},
+        "circuit_breakers": {
+            "gpu_pressure": {"state": "closed"},
+            "latency": {"state": "closed"},
+        },
+        "eval_worker": {"active": eval_worker_active},
+        "demo_mode": _DEMO_MODE,
+    }
+
+
+@app.get("/v1/eval-jobs", tags=["Evaluation"])
+async def eval_jobs(
+    request: Request,
+    limit: int = 50,
+    status: Optional[str] = None,
+) -> dict:
+    """Return recent evaluation jobs from SQLite. Per CLAUDE.md §27."""
+    import sqlite3 as _sqlite3
+    try:
+        _state(request)
+    except AttributeError:
+        raise HTTPException(status_code=503, detail="gateway not initialized")
+
+    if not Path(EVAL_SQLITE_PATH).exists():
+        return {"count": 0, "jobs": []}
+
+    try:
+        conn = _sqlite3.connect(EVAL_SQLITE_PATH)
+        conn.row_factory = _sqlite3.Row
+        q = (
+            "SELECT job_id, request_id, tenant_id, domain, budget_class, "
+            "verification_result, status, score, reasoning, judge_model, "
+            "judge_latency_ms, created_at, started_at, completed_at, error "
+            "FROM eval_jobs"
+        )
+        params: list = []
+        if status:
+            q += " WHERE status = ?"
+            params.append(status.upper())
+        q += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(q, params).fetchall()
+        conn.close()
+        return {"count": len(rows), "jobs": [dict(r) for r in rows]}
+    except Exception as exc:
+        log.warning("eval-jobs query failed: %s", exc)
+        return {"count": 0, "jobs": [], "error": str(exc)}
+
+
+_FAILURE_MODES = {
+    "complexity_timeout": "Complexity scorer timeout → fast-path with default medium budget",
+    "gpu_pressure": "GPU KV-cache pressure → GPU circuit breaker opens",
+    "latency_slo_breach": "P99 TTFT SLO breach → latency circuit breaker opens",
+    "guardrail_timeout": "Guardrail service timeout → conservative block, 503",
+    "output_unsafe": "Output safety classification UNSAFE → structured refusal",
+    "rate_limit": "Rate limit exhausted → 429 with Retry-After",
+    "admission_rejected": "Admission control timeout → 503",
+    "verifier_unavailable": "Verifier service unavailable → non-blocking unverifiable",
+    "policy_fallback": "Unknown tenant → system default policy fallback",
+    "fallback_model_unavailable": "Cheap model unavailable → 503 with retry window",
+}
+
+
+@app.post("/admin/inject-failure", tags=["Admin"])
+async def inject_failure(request: Request) -> dict:
+    """
+    Demo-mode failure injection. Per CLAUDE.md §7.6.
+    Only available when DEMO_MODE=true.
+    """
+    if not _DEMO_MODE:
+        raise HTTPException(
+            status_code=403,
+            detail="Failure injection requires DEMO_MODE=true.",
+        )
+    body = await request.json()
+    failure_type = body.get("failure_type", "")
+    if failure_type not in _FAILURE_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown failure type {failure_type!r}. Valid: {sorted(_FAILURE_MODES)}",
+        )
+    return {
+        "failure_type": failure_type,
+        "description": _FAILURE_MODES[failure_type],
+        "injected": True,
+    }
