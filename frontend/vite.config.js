@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       "/v1": { target: "http://localhost:8000", changeOrigin: true },
       "/admin": { target: "http://localhost:8000", changeOrigin: true },
-      "/audit": { target: "http://localhost:8000", changeOrigin: true },
+      "/audit/records": { target: "http://localhost:8000", changeOrigin: true },
       "/metrics": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
