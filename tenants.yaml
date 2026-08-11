@@ -1,0 +1,14 @@
+# InferaCordon Tenant API Key Map
+# Per CLAUDE.md Section 6 Step 1: loaded at gateway startup into an in-memory dict.
+# Format: api_keys: {api_key: tenant_id}
+# A gateway restart is required to pick up changes (CLAUDE.md Section 11.4 precedent).
+# Never commit production keys — rotate before deployment.
+#
+# Schema: {api_keys: {<key>: <tenant_id>}}
+# Where tenant_id must match the `tenant` field of a loaded policy file.
+
+api_keys:
+  # --- Test / Development keys (rotate before production deployment) ---
+  ic-key-acme-corp-dev:      acme_corp
+  ic-key-demo-tenant-dev:    demo_tenant
+  ic-key-test-internal:      test_tenant

@@ -13,8 +13,8 @@ services:
   # ── 1. API Gateway ─────────────────────────────────────────────────────────
   gateway:
     build:
-      context: ./gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: gateway/Dockerfile
     container_name: ic-gateway
     ports:
       - "8000:8000"
@@ -52,9 +52,11 @@ services:
       context: ./vllm_adapter
       dockerfile: Dockerfile
     container_name: ic-vllm
-    # Port 8080 exposed only within ic-net (not published to host by default)
-    ports:
-      - "8080:8080"
+    # Port 8080 is internal to ic-net only — not published to host.
+    # Direct host access would bypass gateway guardrails (CLAUDE.md Section 8).
+    # Use `docker compose exec vllm curl localhost:8080/health` for debugging.
+    expose:
+      - "8080"
     env_file:
       - .env
     environment:
@@ -95,6 +97,8 @@ services:
       - SERVICE_NAME=guardrail
       - PORT=8001
       - JAEGER_OTLP_ENDPOINT=http://jaeger:4317
+      # CLAUDE.md Section 14.8: fail startup if ONNX models not mounted
+      - GUARDRAIL_REQUIRE_ONNX=true
     volumes:
       - ./guardrail_service/models:/app/models:ro
     healthcheck:

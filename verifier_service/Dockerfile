@@ -8,8 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy into the package subdirectory so `from verifier_service.xxx import` resolves.
+COPY . ./verifier_service/
 
 EXPOSE 8002
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "verifier_service.main:app", "--host", "0.0.0.0", "--port", "8002"]

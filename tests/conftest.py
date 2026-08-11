@@ -12,7 +12,9 @@ import pytest
 @pytest.fixture
 def sample_policy():
     """Returns a validated Policy object from acme_corp_general_qa_v1.yaml."""
-    raise NotImplementedError("Implement with Week 1 policy_engine.loader (Week 1)")
+    from policy_engine.loader import PolicyRegistry
+    registry = PolicyRegistry.load_from_dir("policy_engine/policies")
+    return registry.resolve("acme_corp", "general_qa").policy
 
 
 @pytest.fixture

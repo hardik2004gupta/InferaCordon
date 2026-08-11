@@ -1,0 +1,39 @@
+{
+  "metadata": {
+    "experiment_id": "baseline3_gsm8k_4071b3c2",
+    "timestamp_iso": "2026-08-10T18:13:04.909659+00:00",
+    "git_commit": "c516fba",
+    "dataset_name": "gsm8k",
+    "dataset_version": "BLOCKED",
+    "baseline": 3,
+    "model_name": "BLOCKED",
+    "policy_version": "BLOCKED",
+    "complexity_scorer_version": "BLOCKED",
+    "hardware_config": "BLOCKED \u2014 GPU runtime unavailable",
+    "random_seed": 0,
+    "status": "blocked",
+    "block_reason": "Dataset BLOCKED \u2014 BLOCKED \u2014 GPU node required. Install datasets: pip install datasets. Download and cache the dataset before running. See evaluation/baseline_measurements.py module docstring."
+  },
+  "datasets": {
+    "gsm8k": {
+      "dataset": "gsm8k",
+      "dataset_kind": "verifiable",
+      "baseline": 3,
+      "sample_count": 0,
+      "correct": 0,
+      "incorrect": 0,
+      "unverifiable": 0,
+      "error_count": 0,
+      "accuracy": 0.0,
+      "total_cost_usd": 0.0,
+      "cost_per_correct_usd": Infinity,
+      "avg_reasoning_tokens": 0.0,
+      "avg_output_tokens": 0.0,
+      "avg_latency_ms": 0.0,
+      "p95_latency_ms": 0.0,
+      "cache_hit_rate": 0.0,
+      "escalation_rate": 0.0,
+      "slices": []
+    }
+  }
+}
