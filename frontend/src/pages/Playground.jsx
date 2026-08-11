@@ -4,7 +4,7 @@
  * Shows full governance metadata from InferResponse.
  * All data from POST /v1/infer — no fabricated values.
  */
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { postInfer, getApiKey, setApiKey } from "../lib/api.js";
 import TraceWaterfall from "../components/TraceWaterfall.jsx";
 import BudgetBadge from "../components/BudgetBadge.jsx";

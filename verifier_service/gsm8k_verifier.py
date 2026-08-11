@@ -2,7 +2,7 @@
 GSM8K verifier: numeric answer extraction from reasoning model output.
 
 Per CLAUDE.md Section 15.3 — exact implementation specified verbatim:
-  matches = re.findall(r"[-\d,]+\.?\d*", response)
+  matches = re.findall(r"[-\\d,]+\\.?\\d*", response)
   predicted = float(matches[-1].replace(",", ""))
   expected = float(ground_truth.replace(",", ""))
   passed = abs(predicted - expected) < 1e-6

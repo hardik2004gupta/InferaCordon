@@ -5,7 +5,7 @@
  * Zero fabricated data.
  */
 import { useState, useEffect, useCallback } from "react";
-import { getHealth, getReadiness, getStatus, getEvalJobs } from "../lib/api.js";
+import { getHealth, getStatus, getEvalJobs } from "../lib/api.js";
 import { queryInstant, Q } from "../lib/prometheus.js";
 import CircuitBreakerIndicator from "../components/CircuitBreakerIndicator.jsx";
 import FailureInjectionPanel from "../components/FailureInjectionPanel.jsx";
@@ -104,13 +104,13 @@ export default function SystemHealth() {
       const st = await getStatus();
       setSysStatus(st);
       setDemoMode(st.demo_mode === true);
-    } catch {}
+    } catch (_e) { /* status unavailable — non-fatal */ }
 
     // Eval jobs
     try {
       const jobs = await getEvalJobs({ limit: 10 });
       setEvalJobs(Array.isArray(jobs) ? jobs : []);
-    } catch {}
+    } catch (_e) { /* eval jobs unavailable — non-fatal */ }
 
     // Circuit breakers via Prometheus
     try {
