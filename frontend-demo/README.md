@@ -1,6 +1,6 @@
-# InferaCordon — Frontend Demo
+# InferaCordon - Frontend Demo
 
-Interactive portfolio demo for the InferaCordon governed AI inference control plane. Runs standalone with zero backend dependencies — all telemetry is simulated.
+Interactive portfolio demo for the InferaCordon governed AI inference control plane. Runs standalone with zero backend dependencies - all telemetry is simulated.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ npx vercel
 
 ## What This Is
 
-A Next.js application that demonstrates InferaCordon's four pillars — Guardrails, Governance, Cost Optimization, and Inference Optimization — through an interactive UI with deterministic demo scenarios, animated pipeline simulations, and rich data visualization. Every metric, trace, chart, and audit record is generated from a self-contained demo data layer.
+A Next.js application that demonstrates InferaCordon's four pillars - Guardrails, Governance, Cost Optimization, and Inference Optimization - through an interactive UI with deterministic demo scenarios, animated pipeline simulations, and rich data visualization. Every metric, trace, chart, and audit record is generated from a self-contained demo data layer.
 
 This is **not** the production frontend. It shares no code with the existing `frontend/` directory and makes no requests to the InferaCordon backend.
 
@@ -121,7 +121,7 @@ Surface hierarchy: Canvas → Paper → Raised → Inset → Dense → Technical
 
 ## Known Limitations
 
-- All data is deterministic and simulated — no live inference occurs
+- All data is deterministic and simulated - no live inference occurs
 - Charts display static demo datasets, not streaming telemetry
 - Failure injection simulates system behavior, not actual service failures
 - The semantic cache, admission control, and rate limiter are conceptual demonstrations

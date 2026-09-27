@@ -18,13 +18,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://inferacordon.vercel.app"),
   title: {
-    default: "InferaCordon — Govern Reasoning Compute",
-    template: "%s — InferaCordon",
+    default: "InferaCordon - Govern Reasoning Compute",
+    template: "%s - InferaCordon",
   },
   description:
     "A governed AI inference control plane that makes reasoning compute schedulable, policy-bounded, cost-attributed, and quality-guaranteed.",
   openGraph: {
-    title: "InferaCordon — Govern Reasoning Compute",
+    title: "InferaCordon - Govern Reasoning Compute",
     description:
       "A governed AI inference control plane that makes reasoning compute schedulable, policy-bounded, cost-attributed, and quality-guaranteed.",
     type: "website",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "InferaCordon — Govern Reasoning Compute",
+    title: "InferaCordon - Govern Reasoning Compute",
     description:
       "A governed AI inference control plane that makes reasoning compute schedulable, policy-bounded, cost-attributed, and quality-guaranteed.",
   },

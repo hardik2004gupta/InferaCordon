@@ -131,7 +131,7 @@ export default function PoliciesPage() {
         >
           {DEMO_POLICIES.map((p, i) => (
             <option key={p.policyId} value={i}>
-              {p.policyId} — {p.tenant}/{p.domain} (v{p.versions.policy})
+              {p.policyId} - {p.tenant}/{p.domain} (v{p.versions.policy})
             </option>
           ))}
         </select>

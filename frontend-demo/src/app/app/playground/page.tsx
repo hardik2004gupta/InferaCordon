@@ -150,7 +150,7 @@ export default function PlaygroundPage() {
       {/* ── Demo notice ── */}
       <div className="flex items-center gap-2 rounded border border-[var(--color-amber)]/20 bg-[var(--color-amber)]/[0.04] px-3 py-1.5 text-[11px] text-[var(--color-amber)]">
         <Zap className="h-3 w-3 shrink-0" />
-        Simulated inference — select a scenario and run to see the full pipeline in action
+        Simulated inference - select a scenario and run to see the full pipeline in action
       </div>
 
       {/* ── Scenario selector ── */}

@@ -1,4 +1,4 @@
-# Frontend Demo — Phase 3: Production Readiness
+# Frontend Demo - Phase 3: Production Readiness
 
 Phase 3 is the final production-hardening pass for `frontend-demo/`. No new features were added. No visual redesign occurred. The focus was robustness, accessibility, deployment readiness, and portfolio quality.
 
@@ -19,7 +19,7 @@ Phase 3 is the final production-hardening pass for `frontend-demo/`. No new feat
 
 ## 3. SEO and Metadata
 
-- Root layout: title template (`%s — InferaCordon`), enhanced description, OpenGraph, Twitter card, robots directive
+- Root layout: title template (`%s - InferaCordon`), enhanced description, OpenGraph, Twitter card, robots directive
 - `metadataBase` set to `https://inferacordon.vercel.app`
 - `robots.ts`: allows all crawlers
 - `sitemap.ts`: all 7 routes
@@ -31,7 +31,7 @@ Phase 3 is the final production-hardening pass for `frontend-demo/`. No new feat
 - Added `mountedRef` pattern to prevent state updates after unmount
 - Added cleanup effect to clear all timeouts/intervals on unmount
 - All setTimeout callbacks guard against unmounted state
-- `cleanup()` called at start of every `run()` — prevents stale timers from prior runs
+- `cleanup()` called at start of every `run()` - prevents stale timers from prior runs
 - Rapid re-runs are safe: cleanup cancels all pending transitions before scheduling new ones
 
 ## 5. Accessibility
@@ -95,12 +95,12 @@ No duplicate functionality. No unnecessary packages.
 ## 11. Build Status
 
 - `npm run lint`: passes
-- `npm run build`: passes (14 routes — 8 pages + icon.svg + manifest + robots + sitemap + _not-found)
+- `npm run build`: passes (14 routes - 8 pages + icon.svg + manifest + robots + sitemap + _not-found)
 - TypeScript strict mode: no type errors
 
 ## 12. Known Limitations
 
-- All data is deterministic simulated values — no live inference
+- All data is deterministic simulated values - no live inference
 - Charts display static datasets, not streaming telemetry
 - Failure injection simulates behavior, not actual service failures
 - No authentication or multi-tenant switching

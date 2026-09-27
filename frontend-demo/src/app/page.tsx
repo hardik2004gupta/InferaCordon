@@ -56,7 +56,7 @@ export default function LandingPage() {
           </p>
           <p className="mb-8 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg">
             A control plane that makes reasoning tokens schedulable, policy-bounded,
-            cost-attributed, and quality-guaranteed — sitting between your application
+            cost-attributed, and quality-guaranteed - sitting between your application
             and model infrastructure.
           </p>
           <div className="flex flex-wrap gap-3">

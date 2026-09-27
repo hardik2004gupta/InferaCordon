@@ -1,4 +1,4 @@
-# Frontend Demo — Phase 2 Report
+# Frontend Demo - Phase 2 Report
 
 ## 1. Overview
 
@@ -49,7 +49,7 @@ Five-tab dashboard with Recharts:
 
 | File | Purpose |
 |------|---------|
-| `simulation.ts` | `useSimulation` hook — deterministic pipeline animation engine |
+| `simulation.ts` | `useSimulation` hook - deterministic pipeline animation engine |
 | `observabilityData.ts` | Quality, Performance, Reliability, Governance, Cost data for charts |
 | `failureScenarios.ts` | 8 failure injection scenarios with step sequences |
 
@@ -74,7 +74,7 @@ Five-tab dashboard with Recharts:
 - Zero `console.log/warn/error/debug` in `src/`
 - Zero `TODO/FIXME/HACK` in `src/`
 - No imports from production codebase directories
-- Build passes cleanly: `npm run build` — all 10 static pages generated
+- Build passes cleanly: `npm run build` - all 10 static pages generated
 
 ## 7. Tech Stack
 

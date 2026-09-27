@@ -56,7 +56,7 @@ export default function OverviewPage() {
       {/* Demo banner */}
       <div className="flex items-center gap-2 rounded-md border border-amber-200/80 bg-amber-50/60 px-3 py-1.5 text-[11px] text-amber-700">
         <Zap className="h-3 w-3 shrink-0" />
-        Simulated telemetry — estimated values for demonstration purposes
+        Simulated telemetry - estimated values for demonstration purposes
       </div>
 
       {/* Hero Metric: Cost per Correct Answer */}
@@ -73,7 +73,7 @@ export default function OverviewPage() {
           </span>
         </div>
         <span className="mt-1.5 text-[11px] text-muted-foreground/60">
-          Cost per correct answer — inference + guardrails + verification + overhead
+          Cost per correct answer - inference + guardrails + verification + overhead
         </span>
       </div>
 
@@ -108,7 +108,7 @@ export default function OverviewPage() {
 
       {/* Routing Distribution + System Signal */}
       <div className="grid gap-6 lg:grid-cols-3 min-w-0">
-        {/* Routing Distribution — 2/3 */}
+        {/* Routing Distribution - 2/3 */}
         <div className="lg:col-span-2 min-w-0 rounded-lg border border-border bg-[var(--surface-paper)] p-5">
           <h3 className="section-label text-[11px] tracking-widest text-muted-foreground/70 mb-5">
             ROUTING DISTRIBUTION
@@ -150,7 +150,7 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* System Signal — 1/3 */}
+        {/* System Signal - 1/3 */}
         <div className="space-y-4">
           {/* Circuit Breakers */}
           <div className="rounded-lg border border-border bg-[var(--surface-paper)] p-4 space-y-3">

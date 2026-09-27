@@ -1,4 +1,4 @@
-# Phase 0 — Repository and Engineering Contract
+# Phase 0 - Repository and Engineering Contract
 
 > **Date:** 2026-09-27
 > **Purpose:** Read-only audit of the InferaCordon repository.
@@ -13,9 +13,9 @@
 
 **Primary problem:** Reasoning models generate internal chain-of-thought tokens that are billed in full, consume context, dominate latency, and are invisible to all standard LLMOps tooling. Three simultaneous failure modes exist in production:
 
-1. **Overthinking** — excessive reasoning tokens on simple queries
-2. **Underthinking** — conservative global ceilings produce shallow answers on complex queries
-3. **Budget Blindness** — no per-request allocation, no tenant cost attribution, no SLO-aware routing
+1. **Overthinking** - excessive reasoning tokens on simple queries
+2. **Underthinking** - conservative global ceilings produce shallow answers on complex queries
+3. **Budget Blindness** - no per-request allocation, no tenant cost attribution, no SLO-aware routing
 
 **Four pillars (all must be demonstrable in the five-minute demo):**
 
@@ -36,7 +36,7 @@
 
 | Document | Location | Authority |
 |----------|----------|-----------|
-| `CLAUDE.md` | Repository root (1,800+ lines) | **PRIMARY** — permanent engineering contract governing all architecture, implementation, API contracts, testing, evaluation, and frontend specifications |
+| `CLAUDE.md` | Repository root (1,800+ lines) | **PRIMARY** - permanent engineering contract governing all architecture, implementation, API contracts, testing, evaluation, and frontend specifications |
 | `InferaCordon Detailed Architecture Plan.pdf` | Repository root | Primary architecture source (CLAUDE.md Section 2). Governs system topology, component boundaries, technology choices, implementation roadmap |
 | `InferaCordon MVP Documentation.pdf` | Repository root | Secondary product/MVP source. Governs product intent, UX requirements, evaluation framework, demo requirements |
 | `architecture.md` | Repository root | Concise companion to CLAUDE.md. Contains a **different step ordering** than CLAUDE.md (see Section 19) |
@@ -64,20 +64,20 @@
 | vLLM Server (`ic-vllm`) | 8080 (internal only) | GPU | DeepSeek-R1-7B-Q4 + Qwen2.5-3B-Instruct serving, LogitProcessor registration |
 | Guardrail Service (`ic-guardrail`) | 8001 | CPU only | DeBERTa injection + Llama Guard safety via ONNX Runtime |
 | Verifier Service (`ic-verifier`) | 8002 | CPU only | GSM8K, MATH-500, HumanEval, JSON schema verification |
-| Prometheus (`ic-prometheus`) | 9090 | — | Metrics scraping from all services |
-| Grafana (`ic-grafana`) | 3000 | — | Pre-configured unified dashboard |
-| Jaeger (`ic-jaeger`) | 16686 | — | OpenTelemetry trace collection via OTLP |
+| Prometheus (`ic-prometheus`) | 9090 | - | Metrics scraping from all services |
+| Grafana (`ic-grafana`) | 3000 | - | Pre-configured unified dashboard |
+| Jaeger (`ic-jaeger`) | 16686 | - | OpenTelemetry trace collection via OTLP |
 
 **In-process components (not containers):**
-- Policy Engine — Python library imported by gateway
-- FAISS Semantic Cache — in-process IndexFlatIP inside gateway
-- Eval Worker — background thread pool inside gateway
-- Complexity Scorer — synchronous in-process function
+- Policy Engine - Python library imported by gateway
+- FAISS Semantic Cache - in-process IndexFlatIP inside gateway
+- Eval Worker - background thread pool inside gateway
+- Complexity Scorer - synchronous in-process function
 
 ### docker-compose.yml status
 
 The `docker-compose.yml` is fully defined with all seven services, health checks, volumes, and networking. Notable details:
-- vLLM port 8080 is `expose`-only (not published to host) — enforces that clients must go through the gateway
+- vLLM port 8080 is `expose`-only (not published to host) - enforces that clients must go through the gateway
 - Gateway depends on vLLM, guardrail, and verifier being healthy before starting
 - Model weights use a named Docker volume (`vllm-model-cache`)
 - Frontend static files mounted from `frontend/dist/` as read-only
@@ -93,12 +93,12 @@ The gateway implements the following sequence. Each step's implementation status
 
 | Step | Name | Sync/Async | Implemented? | Notes |
 |------|------|-----------|-------------|-------|
-| 1 | Authentication | sync | **YES** | `auth.py` — API key → tenant ID via `tenants.yaml` dict |
+| 1 | Authentication | sync | **YES** | `auth.py` - API key → tenant ID via `tenants.yaml` dict |
 | 2 | Rate Limiting | sync | **CODE EXISTS, NOT WIRED** | `rate_limiter.py` exists but is never imported by `main.py` |
-| 3 | Trace Context | sync | **YES** | `trace_context.py` — UUID request ID + W3C traceparent |
+| 3 | Trace Context | sync | **YES** | `trace_context.py` - UUID request ID + W3C traceparent |
 | 4 | Pre-Inference Pipeline | sync | **PARTIAL** | Complexity scoring implemented; pipeline orchestrator with 50ms deadline NOT implemented (scorer called directly) |
 | 5 | Policy Lookup | sync | **YES** | In-process dict lookup via `PolicyRegistry.resolve()` |
-| 6 | Budget Class Assignment | sync | **YES** | `budget_controller.py` — maps complexity → budget class |
+| 6 | Budget Class Assignment | sync | **YES** | `budget_controller.py` - maps complexity → budget class |
 | 7 | Decision Record Write | async | **YES** | Non-blocking enqueue to `AuditLog` background thread |
 | 8 | Semantic Cache Lookup | sync | **YES** | FAISS IndexFlatIP, in-process. Cache hit → immediate return |
 | 8.5 | PII Redaction | sync | **YES** | Presidio wrapper. Runs BEFORE cache lookup (deviation from CLAUDE.md which puts PII in Step 4) |
@@ -109,7 +109,7 @@ The gateway implements the following sequence. Each step's implementation status
 | 13 | Verification | sync | **PARTIAL** | Only `json_schema` verification in live gateway; GSM8K/MATH/HumanEval require ground truth not present in `InferRequest` |
 | 14 | Escalation | sync | **YES** | Monotonic budget class escalation, max 1 retry, semaphore release/re-acquire |
 | 15 | Response Delivery | sync | **YES** | Including Prometheus metric updates, outcome record enqueue |
-| 16 | Async Evaluation | background | **YES** | `AsyncEvalWorker` — LLM-judge for non-verifiable responses |
+| 16 | Async Evaluation | background | **YES** | `AsyncEvalWorker` - LLM-judge for non-verifiable responses |
 
 ### Step ordering discrepancy (vs CLAUDE.md)
 
@@ -122,7 +122,7 @@ The actual implementation order differs slightly from the CLAUDE.md specificatio
 
 ## 5. Component Responsibility Map
 
-### Gateway (`gateway/` — 18 Python files, ~3,200 lines)
+### Gateway (`gateway/` - 18 Python files, ~3,200 lines)
 
 | File | Responsibility | Implementation Status |
 |------|---------------|----------------------|
@@ -145,7 +145,7 @@ The actual implementation order differs slightly from the CLAUDE.md specificatio
 | `schemas.py` | Pydantic request/response models | Complete |
 | `Dockerfile` | Gateway container build | Complete |
 
-### Policy Engine (`policy_engine/` — 4 Python files + 3 YAML policies)
+### Policy Engine (`policy_engine/` - 4 Python files + 3 YAML policies)
 
 | File | Responsibility | Status |
 |------|---------------|--------|
@@ -154,17 +154,17 @@ The actual implementation order differs slightly from the CLAUDE.md specificatio
 | `budget_controller.py` | Complexity → budget class mapping; fleet pressure downgrades | Complete |
 | `audit_log.py` | Append-only JSONL, background write thread | Complete |
 
-### vLLM Adapter (`vllm_adapter/` — 5 Python files)
+### vLLM Adapter (`vllm_adapter/` - 5 Python files)
 
 | File | Responsibility | Status |
 |------|---------------|--------|
 | `logit_processor.py` | BudgetLogitProcessor per-request budget enforcement | Complete |
-| `circuit_breakers.py` | GPU pressure + latency circuit breakers | **STUB — raises NotImplementedError** |
+| `circuit_breakers.py` | GPU pressure + latency circuit breakers | **STUB - raises NotImplementedError** |
 | `constants.py` | End-of-thinking token ID | Complete |
 | `serving_config.py` | vLLM server configuration builder | Complete |
 | `inference_adapter.py` | Inference call spec builder + result parser | Complete |
 
-### Guardrail Service (`guardrail_service/` — 3 Python files)
+### Guardrail Service (`guardrail_service/` - 3 Python files)
 
 | File | Responsibility | Status |
 |------|---------------|--------|
@@ -172,7 +172,7 @@ The actual implementation order differs slightly from the CLAUDE.md specificatio
 | `injection_classifier.py` | DeBERTa ONNX injection detection | Complete (falls back to keyword heuristic if ONNX unavailable) |
 | `safety_classifier.py` | Llama Guard ONNX safety classification | Complete (falls back to keyword heuristic if ONNX unavailable) |
 
-### Verifier Service (`verifier_service/` — 5 Python files)
+### Verifier Service (`verifier_service/` - 5 Python files)
 
 | File | Responsibility | Status |
 |------|---------------|--------|
@@ -182,7 +182,7 @@ The actual implementation order differs slightly from the CLAUDE.md specificatio
 | `humaneval_runner.py` | Sandboxed subprocess execution | Complete |
 | `schema_verifier.py` | JSON schema validation | Complete |
 
-### Telemetry (`telemetry/` — 3 Python files)
+### Telemetry (`telemetry/` - 3 Python files)
 
 | File | Responsibility | Status |
 |------|---------------|--------|
@@ -190,7 +190,7 @@ The actual implementation order differs slightly from the CLAUDE.md specificatio
 | `prometheus_metrics.py` | All `ic_` prefixed Prometheus metrics | Complete |
 | `trace_schema.py` | RequestTrace dataclass | Complete |
 
-### Evaluation (`evaluation/` — 11 Python files)
+### Evaluation (`evaluation/` - 11 Python files)
 
 | File | Responsibility | Status |
 |------|---------------|--------|
@@ -206,7 +206,7 @@ The actual implementation order differs slightly from the CLAUDE.md specificatio
 | `result_schema.py` | Experiment result Pydantic schema | Complete |
 | `update_readme_metrics.py` | README metrics block auto-updater | Complete |
 
-**Benchmark results status:** Only one result file exists (`experiment_baseline3_gsm8k_4071b3c2.json`) and it is marked `"status": "blocked"` — GPU runtime unavailable. No benchmark has actually run.
+**Benchmark results status:** Only one result file exists (`experiment_baseline3_gsm8k_4071b3c2.json`) and it is marked `"status": "blocked"` - GPU runtime unavailable. No benchmark has actually run.
 
 ---
 
@@ -256,7 +256,7 @@ The routing decision is embedded in the budget controller: `low` class → Qwen2
 ### Escalation
 
 Implemented and wired. On verification failure:
-1. Check `EscalationHandler.should_escalate()` — INCORRECT result + retries < max (1) + escalation enabled
+1. Check `EscalationHandler.should_escalate()` - INCORRECT result + retries < max (1) + escalation enabled
 2. Release current admission semaphore
 3. Compute next budget class via `escalate_budget_class()`
 4. Re-acquire semaphore for escalated class
@@ -292,9 +292,9 @@ Both `injection_classifier.py` and `safety_classifier.py` fall back to keyword-b
 ### Policy Structure
 
 Three policy files exist:
-1. `acme_corp_general_qa_v1.yaml` — primary demo tenant, matches CLAUDE.md Section 11.5 exactly
-2. `demo_tenant_v1.yaml` — secondary demo tenant
-3. `default_policy_v1.yaml` — system fallback for unknown tenants (Failure Mode 7), more conservative
+1. `acme_corp_general_qa_v1.yaml` - primary demo tenant, matches CLAUDE.md Section 11.5 exactly
+2. `demo_tenant_v1.yaml` - secondary demo tenant
+3. `default_policy_v1.yaml` - system fallback for unknown tenants (Failure Mode 7), more conservative
 
 All policies validated at startup via Pydantic (`PolicyRegistry.load_from_dir()`). Gateway refuses to start with invalid policy files.
 
@@ -331,7 +331,7 @@ Implemented in `vllm_adapter/logit_processor.py`. Matches CLAUDE.md Section 9 sp
 
 ### Validation Gate
 
-`evaluation/logit_processor_validation.py` implements the 50-query × 5-position validation gate. Status: **BLOCKED** — requires GPU runtime. No validation results exist.
+`evaluation/logit_processor_validation.py` implements the 50-query × 5-position validation gate. Status: **BLOCKED** - requires GPU runtime. No validation results exist.
 
 ### Fallback
 
@@ -352,7 +352,7 @@ Implemented in `vllm_adapter/logit_processor.py`. Matches CLAUDE.md Section 9 sp
 
 ### Live Gateway Verification
 
-In the live gateway, only `json_schema` verification runs. GSM8K/MATH/HumanEval require ground truth or test cases that are not present in the `InferRequest` schema — these run only in the evaluation harness.
+In the live gateway, only `json_schema` verification runs. GSM8K/MATH/HumanEval require ground truth or test cases that are not present in the `InferRequest` schema - these run only in the evaluation harness.
 
 ### Escalation Trigger
 
@@ -396,11 +396,11 @@ All metrics use the `ic_` prefix. The following are **actually defined** in `tel
 ### Grafana Dashboard
 
 `dashboards/grafana/inferacordon_unified.json` defines a comprehensive dashboard with five row panels:
-1. **Cost** — Request cost by budget class, cache hit rate gauge, reasoning tokens saved
-2. **Quality** — LLM judge score, verification pass rate, escalation rate
-3. **Reliability** — Circuit breaker states, admission queue depth, rate limit/admission rejections
-4. **Performance** — P50/P95/P99 E2E latency, TTFT by model, throughput by budget class
-5. **Governance** — Budget class distribution pie chart, guardrail blocks, budget ceiling enforcement
+1. **Cost** - Request cost by budget class, cache hit rate gauge, reasoning tokens saved
+2. **Quality** - LLM judge score, verification pass rate, escalation rate
+3. **Reliability** - Circuit breaker states, admission queue depth, rate limit/admission rejections
+4. **Performance** - P50/P95/P99 E2E latency, TTFT by model, throughput by budget class
+5. **Governance** - Budget class distribution pie chart, guardrail blocks, budget ceiling enforcement
 
 Dashboard uses `ic_` metric names that match the `prometheus_metrics.py` definitions. Some metric names in the dashboard differ slightly from implementations (e.g., `ic_cache_hit_total` vs `ic_cache_hits_total` in CLAUDE.md).
 
@@ -460,7 +460,7 @@ The light-theme design is an **undocumented deviation** from the engineering con
 | Page | Route | Lines | Status | Assessment |
 |------|-------|:-----:|--------|------------|
 | **Playground** | `/` | 447 | Substantial | Prompt input, pipeline animation, governance result grid, trace waterfall. Missing: verification toggle, cost ceiling, markdown rendering, measured stage latencies, raw JSON trace panel |
-| **Dashboard** | `/dashboard` | 251 | Partial | 5 tabs present but each is minimal — line charts for basic metrics only. Missing: gauge visualizations, donut chart, bar charts, histograms, eval results tables, governance event log |
+| **Dashboard** | `/dashboard` | 251 | Partial | 5 tabs present but each is minimal - line charts for basic metrics only. Missing: gauge visualizations, donut chart, bar charts, histograms, eval results tables, governance event log |
 | **Policy Manager** | `/policies` | 159 | Partial | Policy list + PolicyCard with 4 sections + JSON view. Missing: version diff panel, YAML validation panel with code editor |
 | **Audit Log** | `/audit` | 264 | Substantial | 10-column table with 3 filters + pagination + detail panel. Missing: date range picker, request ID search, Jaeger trace link, eval result link, policy version link |
 | **System Health** | `/health` | 204 | Substantial | 7 service cards + CB indicators + eval jobs + failure injection. Missing: per-service metrics, real health probes to non-gateway services, streaming failure results |
@@ -493,7 +493,7 @@ The light-theme design is an **undocumented deviation** from the engineering con
 | GET | `/audit/records` | Audit log query | AuditLog | Yes |
 | GET | `/v1/status` | System state (cache, admission, CB, demo_mode) | SystemHealth | Yes |
 | GET | `/v1/eval-jobs` | Evaluation job list | SystemHealth | Yes |
-| POST | `/admin/inject-failure` | Failure injection (DEMO_MODE only) | FailureInjectionPanel | **Partial** — returns description but doesn't actually inject failure |
+| POST | `/admin/inject-failure` | Failure injection (DEMO_MODE only) | FailureInjectionPanel | **Partial** - returns description but doesn't actually inject failure |
 
 ### Endpoints NOT in frontend but documented in CLAUDE.md
 
@@ -528,10 +528,10 @@ The light-theme design is an **undocumented deviation** from the engineering con
 | Segment | Capability Required | Implementation Status |
 |---------|--------------------|-----------------------|
 | 1. Overthinking Suppression | Playground shows budget class selection, reasoning tokens used/allocated, stop reason | **Backend ready, frontend can demonstrate** |
-| 2. Underthinking Prevention / Escalation | JSON schema verification → failure → escalation to higher budget class | **Backend ready** — escalation works. Frontend shows escalation_count. Trace waterfall shows two spans conceptually but uses approximated durations |
-| 3. Governance (Policy + Audit) | Policy Manager shows versioned policies; Audit Log shows decision+outcome records | **Partially ready** — policies display correctly. Audit records display. Missing: linked trace IDs, version diff |
-| 4. Circuit Breaker Activation | Failure injection triggers CB → System Health shows state change | **NOT READY** — circuit breakers are stubs. Failure injection endpoint returns description only without actual injection |
-| 5. Cost Summary | Dashboard shows cost-per-correct-answer with delta vs baseline | **NOT READY** — no benchmark results exist. Cost tab has basic line chart but no cost-per-correct-answer metric card or delta |
+| 2. Underthinking Prevention / Escalation | JSON schema verification → failure → escalation to higher budget class | **Backend ready** - escalation works. Frontend shows escalation_count. Trace waterfall shows two spans conceptually but uses approximated durations |
+| 3. Governance (Policy + Audit) | Policy Manager shows versioned policies; Audit Log shows decision+outcome records | **Partially ready** - policies display correctly. Audit records display. Missing: linked trace IDs, version diff |
+| 4. Circuit Breaker Activation | Failure injection triggers CB → System Health shows state change | **NOT READY** - circuit breakers are stubs. Failure injection endpoint returns description only without actual injection |
+| 5. Cost Summary | Dashboard shows cost-per-correct-answer with delta vs baseline | **NOT READY** - no benchmark results exist. Cost tab has basic line chart but no cost-per-correct-answer metric card or delta |
 
 ### Failure Injection Status
 
@@ -543,13 +543,13 @@ The `/admin/inject-failure` endpoint accepts failure types but **does not actual
 
 ### Benchmarks
 
-**Status: BLOCKED** — No GPU runtime has been available. The single result file (`experiment_baseline3_gsm8k_4071b3c2.json`) contains zero samples and is marked `"status": "blocked"`.
+**Status: BLOCKED** - No GPU runtime has been available. The single result file (`experiment_baseline3_gsm8k_4071b3c2.json`) contains zero samples and is marked `"status": "blocked"`.
 
 ### README Metrics
 
 The README metrics block is a placeholder:
 ```
-> **Benchmark results pending** — GPU infrastructure required to run `evaluation/benchmark_harness.py`.
+> **Benchmark results pending** - GPU infrastructure required to run `evaluation/benchmark_harness.py`.
 ```
 
 Portfolio targets listed are explicitly labeled as targets, not results. This is correct per CLAUDE.md Section 27.
@@ -612,7 +612,7 @@ inferacordon/
 │
 ├── vllm_adapter/                    ← vLLM integration
 │   ├── logit_processor.py           ← BudgetLogitProcessor
-│   ├── circuit_breakers.py          ← STUB — raises NotImplementedError
+│   ├── circuit_breakers.py          ← STUB - raises NotImplementedError
 │   ├── constants.py                 ← End-of-thinking token ID (151668)
 │   ├── serving_config.py            ← Server configuration builder
 │   ├── inference_adapter.py         ← Call spec builder + result parser
@@ -706,9 +706,9 @@ inferacordon/
 | Async Eval (LLM Judge) | Yes | Yes | Yes | Yes (eval-jobs endpoint) | |
 | Failure Injection | Yes | **STUB** | No | Yes (UI sends request) | Returns description only, no actual injection |
 | Load Testing | Yes | Code exists | No | No | Locust profiles defined |
-| Benchmark Harness | Yes | Yes | Partial | No | BLOCKED — needs GPU |
+| Benchmark Harness | Yes | Yes | Partial | No | BLOCKED - needs GPU |
 | Grafana Dashboard | Yes | Yes | N/A | N/A | Pre-configured JSON committed |
-| Frontend (5 pages) | Yes | Partial | No | — | Light theme, missing features per section 13 |
+| Frontend (5 pages) | Yes | Partial | No | - | Light theme, missing features per section 13 |
 | Streaming | Yes | No | No | No | "Reserved" in schemas.py |
 | Demo Recording | Yes | No | N/A | N/A | Phase 13-14 deliverable |
 
@@ -759,17 +759,17 @@ CLAUDE.md Section 22.1 specifies a dark theme with `#0D1117` base background. Th
 
 CLAUDE.md Section 6.3 Step 4 specifies a 50ms deadline timer for the pre-inference pipeline. The implementation calls the complexity scorer directly without a deadline orchestrator.
 
-**Classification:** Implementation gap — the `pre_inference_pipeline.py` file exists but its deadline logic is not used.
+**Classification:** Implementation gap - the `pre_inference_pipeline.py` file exists but its deadline logic is not used.
 
 ### D8. PII Redaction Ordering
 
 CLAUDE.md Section 6.3 places PII redaction in Step 4 (pre-inference pipeline, before policy lookup). The implementation places it at Step 8.5 (after budget assignment, before cache lookup).
 
-**Classification:** Intentional deviation. The implementation comment notes that PII must run before the cache sees the prompt, which is correct — but the ordering relative to policy lookup differs from spec.
+**Classification:** Intentional deviation. The implementation comment notes that PII must run before the cache sees the prompt, which is correct - but the ordering relative to policy lookup differs from spec.
 
 ### D9. README Status Badge Says "Phase 1"
 
-The README badge shows "phase 1 — baseline & validation" but the git history shows commits through Phase 11-12 (frontend, observability, integration).
+The README badge shows "phase 1 - baseline & validation" but the git history shows commits through Phase 11-12 (frontend, observability, integration).
 
 **Classification:** Documentation lag.
 
@@ -823,11 +823,11 @@ The frontend `lib/prometheus.js` expects `/prometheus` as the Prometheus API pat
 
 5. **How should the Prometheus proxy work in production?** The frontend assumes `/prometheus` proxied through the gateway, but this route doesn't exist.
 
-6. **Should the pre-inference pipeline deadline timer be implemented?** The orchestrator exists but isn't used — the complexity scorer runs without time-bounding.
+6. **Should the pre-inference pipeline deadline timer be implemented?** The orchestrator exists but isn't used - the complexity scorer runs without time-bounding.
 
 7. **What should failure injection actually do?** The endpoint stub returns a description but doesn't modify system behavior.
 
-8. **Which step ordering is authoritative — CLAUDE.md or the implementation?** There are differences in PII redaction placement.
+8. **Which step ordering is authoritative - CLAUDE.md or the implementation?** There are differences in PII redaction placement.
 
 9. **Should guardrail/verifier keyword fallbacks be documented?** The ONNX fallback behavior is not in CLAUDE.md.
 
@@ -861,7 +861,7 @@ Based on the project's documented contracts and architecture:
 
 11. **Do not invent policy deployment functionality.** The Policy Manager is read-only. Policy updates require gateway restart (CLAUDE.md Section 11.4).
 
-12. **Do not expose raw prompts or responses in audit views.** Per CLAUDE.md Section 19: "Never store raw prompt or response text by default — only derived signals, counts, and outcomes."
+12. **Do not expose raw prompts or responses in audit views.** Per CLAUDE.md Section 19: "Never store raw prompt or response text by default - only derived signals, counts, and outcomes."
 
 ---
 
@@ -872,7 +872,7 @@ Based on the project's documented contracts and architecture:
 3. Implement only the requested phase scope.
 4. Preserve all backend contracts and existing functionality.
 5. Every frontend value must trace to a documented API response field or Prometheus metric.
-6. If Prometheus is unreachable, show null/unavailable state — never fabricate.
+6. If Prometheus is unreachable, show null/unavailable state - never fabricate.
 7. The five pages correspond to CLAUDE.md Section 22 subsections 22.2–22.6. Implementation must reference the specific subsection.
 8. Dark theme restoration (if chosen) must use the exact hex values from CLAUDE.md Section 22.1.
 9. All JetBrains Mono usage must follow the documented rule: metric values, token counts, cost figures, latency readings, version identifiers, JSON data, trace span labels.
@@ -927,7 +927,7 @@ All implementation was committed on August 10–11, 2026 across 11 commits:
 
 **E. Current frontend page status:** All five pages exist. Playground and Audit Log are substantial. Dashboard is partial. Policy Manager is partial. System Health is substantial but with broken circuit breaker display.
 
-**F. Backend APIs relevant to frontend:** 9 endpoints identified — `/v1/infer`, `/v1/health`, `/v1/readiness`, `/v1/status`, `/v1/eval-jobs`, `/admin/policies`, `/audit/records`, `/admin/inject-failure`, `/metrics`.
+**F. Backend APIs relevant to frontend:** 9 endpoints identified - `/v1/infer`, `/v1/health`, `/v1/readiness`, `/v1/status`, `/v1/eval-jobs`, `/admin/policies`, `/audit/records`, `/admin/inject-failure`, `/metrics`.
 
 **G. Major mismatches:** 15 discrepancies documented (Section 19). Most significant: rate limiter not wired, circuit breakers are stubs, failure injection is a stub, frontend uses light theme instead of dark, CB indicator has prop mismatch.
 
